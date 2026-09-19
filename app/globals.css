@@ -1,0 +1,425 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+@import "primeicons/primeicons.css";
+
+:root {
+  /* ── AMP Technology Brand Colors ── */
+  --background: #f5f8ff;
+  --foreground: #0f1c35;
+  --surface: #ffffff;
+  --surface-soft: #eef4ff;
+
+  /* Primary — Deep Blue */
+  --brand-primary: #1a3a6b;
+  --brand-primary-light: #2557a7;
+  --brand-primary-dark: #0f1c35;
+
+  /* Secondary — Sky Blue */
+  --brand-blue: #2196d3;
+  --brand-blue-light: #56b4e8;
+  --brand-blue-dark: #1270a8;
+
+  /* Accent — Orange */
+  --brand-orange: #f97316;
+  --brand-orange-light: #fb923c;
+  --brand-orange-dark: #ea6000;
+
+  /* Accent — Amber/Gold */
+  --brand-amber: #f59e0b;
+  --brand-amber-light: #fbbf24;
+  --brand-amber-dark: #d97706;
+
+  /* Legacy aliases (backward compat) */
+  --brand: #f97316;
+  --brand-strong: #ea6000;
+  --brand-ink: #ffffff;
+
+  --muted: #5f6b7a;
+  --border: #dde8f5;
+  --shadow: 0 24px 55px rgba(15, 28, 53, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: "Poppins", "Montserrat", "Segoe UI", sans-serif;
+  margin: 0;
+}
+
+/* ── Background ── */
+.jd-home {
+  min-height: 100vh;
+  position: relative;
+  overflow: hidden;
+  padding: 28px;
+  background:
+    radial-gradient(circle at 10% 12%, rgba(249, 115, 22, 0.12), transparent 35%),
+    radial-gradient(circle at 88% 18%, rgba(26, 58, 107, 0.14), transparent 34%),
+    linear-gradient(145deg, #f5f8ff 0%, #f8fafc 45%, #eef4ff 100%);
+}
+
+.jd-shell {
+  width: min(1200px, 100%);
+  margin: 0 auto;
+  position: relative;
+  z-index: 2;
+}
+
+.jd-simple-home {
+  display: grid;
+  place-items: center;
+}
+
+.jd-simple-shell {
+  width: min(880px, 100%);
+  margin: 0 auto;
+  position: relative;
+  z-index: 2;
+}
+
+.jd-simple-card {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(5px);
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  box-shadow: var(--shadow);
+  padding: 28px;
+}
+
+.jd-simple-brand {
+  margin-bottom: 14px;
+}
+
+.jd-simple-card h2 {
+  margin: 6px 0 0;
+  font-size: clamp(1.7rem, 4vw, 2.4rem);
+}
+
+.jd-simple-card p {
+  margin-top: 10px;
+  color: var(--muted);
+  line-height: 1.7;
+  max-width: 660px;
+}
+
+.jd-simple-actions {
+  margin-top: 16px;
+}
+
+.jd-simple-image-wrap {
+  margin-top: 20px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid #dde8f5;
+}
+
+.jd-simple-image {
+  width: 100%;
+  height: 240px;
+  object-fit: cover;
+  display: block;
+}
+
+/* ── Background Orbs ── */
+.jd-bg-orb {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(2px);
+  pointer-events: none;
+}
+
+.jd-bg-orb-one {
+  width: 340px;
+  height: 340px;
+  left: -120px;
+  top: -100px;
+  background: radial-gradient(circle, rgba(249, 115, 22, 0.45), rgba(249, 115, 22, 0));
+}
+
+.jd-bg-orb-two {
+  width: 360px;
+  height: 360px;
+  right: -140px;
+  bottom: -130px;
+  background: radial-gradient(circle, rgba(26, 58, 107, 0.28), rgba(26, 58, 107, 0));
+}
+
+/* ── Topbar ── */
+.jd-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  border-radius: 18px;
+  padding: 14px 20px;
+  box-shadow: 0 12px 30px rgba(15, 28, 53, 0.08);
+}
+
+.jd-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.jd-brand h1 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--brand-primary);
+}
+
+.jd-brand p {
+  margin: 2px 0 0;
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.jd-top-login {
+  border: 0;
+  border-radius: 12px;
+  padding: 10px 18px;
+  font-weight: 600;
+  background: linear-gradient(110deg, var(--brand-primary), var(--brand-blue));
+  color: #fff;
+  cursor: pointer;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.jd-top-login:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(26, 58, 107, 0.28);
+}
+
+/* ── Hero ── */
+.jd-hero-grid {
+  margin-top: 22px;
+  display: grid;
+  grid-template-columns: 1.4fr 0.85fr;
+  gap: 18px;
+}
+
+.jd-hero-card,
+.jd-preview-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  box-shadow: var(--shadow);
+}
+
+.jd-hero-card {
+  padding: 34px;
+}
+
+.jd-tag {
+  display: inline-block;
+  margin-bottom: 14px;
+  background: linear-gradient(90deg, var(--brand-primary), var(--brand-blue));
+  color: #fff;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 7px 12px;
+  border-radius: 999px;
+}
+
+.jd-hero-card h2 {
+  margin: 0;
+  font-size: clamp(1.8rem, 3.2vw, 2.7rem);
+  line-height: 1.18;
+  max-width: 740px;
+  color: var(--brand-primary-dark);
+}
+
+.jd-hero-card p {
+  margin-top: 14px;
+  margin-bottom: 0;
+  font-size: 1rem;
+  line-height: 1.7;
+  max-width: 660px;
+  color: var(--muted);
+}
+
+/* ── Buttons ── */
+.jd-cta-row {
+  margin-top: 24px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.jd-btn-primary,
+.jd-btn-ghost {
+  border-radius: 12px;
+  border: 0;
+  padding: 12px 18px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.jd-btn-primary {
+  background: linear-gradient(110deg, var(--brand-orange), var(--brand-amber));
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(249, 115, 22, 0.3);
+}
+
+.jd-btn-ghost {
+  background: #f0f5ff;
+  border: 1px solid #ccdaf5;
+  color: var(--brand-primary);
+}
+
+.jd-btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(249, 115, 22, 0.38);
+}
+
+.jd-btn-ghost:hover {
+  transform: translateY(-1px);
+  background: #e6eeff;
+}
+
+/* ── Stats ── */
+.jd-stats-grid {
+  margin-top: 24px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.jd-stat-card {
+  background: linear-gradient(135deg, #eef4ff, #f5f8ff);
+  border: 1px solid #dde8f5;
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.jd-stat-card h3 {
+  margin: 0;
+  font-size: 1.2rem;
+  color: var(--brand-primary);
+}
+
+.jd-stat-card p {
+  margin-top: 5px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+/* ── Preview Card ── */
+.jd-preview-card {
+  padding: 22px;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.jd-preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.jd-preview-header h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  color: var(--brand-primary-dark);
+}
+
+.jd-preview-header span {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #00763f;
+  background: #e6f9ef;
+  padding: 6px 10px;
+  border-radius: 999px;
+}
+
+.jd-mini-kpi {
+  background: #f0f6ff;
+  border: 1px solid #d6e6f8;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.jd-mini-kpi p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.jd-mini-kpi strong {
+  margin-top: 5px;
+  display: block;
+  font-size: 1.02rem;
+  color: var(--brand-primary);
+}
+
+.jd-preview-image-wrap {
+  margin-top: 6px;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.jd-preview-image {
+  width: 100%;
+  height: 175px;
+  object-fit: cover;
+}
+
+/* ── Module Strip ── */
+.jd-module-strip {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.jd-module-item {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  text-align: center;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--brand-primary);
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.jd-module-item:hover {
+  border-color: var(--brand-blue);
+  background: #eef4ff;
+}
+
+/* ── Scrollbar ── */
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ── Responsive ── */
+@media (max-width: 1024px) {
+  .jd-home { padding: 16px; }
+  .jd-hero-grid { grid-template-columns: 1fr; }
+  .jd-module-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 640px) {
+  .jd-topbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .jd-top-login { width: 100%; }
+  .jd-hero-card,
+  .jd-preview-card { border-radius: 18px; padding: 18px; }
+  .jd-stats-grid,
+  .jd-module-strip { grid-template-columns: 1fr; }
+  .jd-simple-card { padding: 18px; border-radius: 16px; }
+  .jd-simple-image { height: 180px; }
+}
