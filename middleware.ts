@@ -14,6 +14,10 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
+  if (pathname === "/store") {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
   if (pathname === "/login") {
     if (!loginToken) {
       return NextResponse.next();
@@ -61,5 +65,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/login", "/profile", "/dashboard/:path*"],
+  matcher: ["/", "/store", "/login", "/profile", "/dashboard/:path*"],
 };

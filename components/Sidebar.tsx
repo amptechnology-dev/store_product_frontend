@@ -100,46 +100,51 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
   }, []);
 
   const sections: Section[] = [
-  {
-    title: "Menu",
-    items: [
-      ...(role === "ADMIN"
-        ? [
-            {
-              label: "Ads",
-              icon: "pi-megaphone",
-              href: "/dashboard/ads",
-            },
-            // {
-            //   label: "User Actions",
-            //   icon: "pi-history",
-            //   href: "/dashboard/store-actions",
-            // },
-          ]
-        : []),
-      ...(role === "STORE"
-        ? [
-            {
-              label: "Categories",
-              icon: "pi-tags",
-              href: "/dashboard/categories",
-            },
-            {
-              label: "Products",
-              icon: "pi-box",
-              href: "/dashboard/products",
-            },
-          ]
-        : []),
-      { label: "Store", icon: "pi-shop", href: "/dashboard/store" },
-    ],
-  },
-];
+    {
+      title: "Menu",
+      items: [
+        ...(role === "ADMIN"
+          ? [
+              {
+                label: "Ads",
+                icon: "pi-megaphone",
+                href: "/dashboard/ads",
+              },
+              // {
+              //   label: "User Actions",
+              //   icon: "pi-history",
+              //   href: "/dashboard/store-actions",
+              // },
+            ]
+          : []),
+        ...(role === "STORE"
+          ? [
+              {
+                label: "Categories",
+                icon: "pi-tags",
+                href: "/dashboard/categories",
+              },
+              {
+                label: "Products",
+                icon: "pi-box",
+                href: "/dashboard/products",
+              },
+              {
+                label: "Orders",
+                icon: "pi-shopping-cart",
+                href: "/dashboard/orders",
+              },
+            ]
+          : []),
+        { label: "Store", icon: "pi-shop", href: "/dashboard/store" },
+      ],
+    },
+  ];
 
   const showLabels = !collapsed || isMobile;
 
   // ---------------- UI ----------------
-  const sidebarWidth = isMobile ? 264 : collapsed ? 86 : 264;
+  const sidebarWidth = isMobile ? 248 : collapsed ? 78 : 240;
 
   const sidebarStyle: React.CSSProperties = {
     width: sidebarWidth,
@@ -173,20 +178,20 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
           display: "flex",
           alignItems: "center",
           justifyContent: collapsed && !isMobile ? "center" : "flex-start",
-          gap: 12,
-          padding: "20px 16px",
+          gap: 10,
+          padding: "16px 14px",
           borderBottom: "1px solid var(--border)",
-          marginBottom: 16,
+          marginBottom: 10,
         }}
       >
         <img
           src="/img/photos/amp-logo.png"
           alt="AMP Technology"
           style={{
-            width: 42,
-            height: 42,
+            width: 36,
+            height: 36,
             objectFit: "contain",
-            borderRadius: 10,
+            borderRadius: 9,
             background: "var(--surface-soft)",
             border: "1px solid var(--border)",
             padding: 4,
@@ -198,10 +203,11 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
             <h2
               style={{
                 margin: 0,
-                fontSize: "1.05rem",
+                fontSize: "0.98rem",
                 fontWeight: 700,
                 color: "var(--brand-primary-dark)",
                 whiteSpace: "nowrap",
+                lineHeight: 1.2,
               }}
             >
               AMP Technology
@@ -209,8 +215,8 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
             <p
               style={{
                 margin: "2px 0 0",
-                fontSize: "0.7rem",
-                letterSpacing: "0.08em",
+                fontSize: "0.65rem",
+                letterSpacing: "0.07em",
                 textTransform: "uppercase",
                 color: "var(--muted)",
               }}
@@ -225,33 +231,34 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
       {showLabels ? (
         <div
           style={{
-            margin: "0 14px 18px",
-            padding: 12,
-            borderRadius: 14,
+            margin: "0 12px 12px",
+            padding: 10,
+            borderRadius: 12,
             background: "var(--surface-soft)",
             border: "1px solid var(--border)",
             display: "flex",
             alignItems: "center",
-            gap: 10,
+            gap: 8,
           }}
         >
-          <Avatar image={user.image} shape="circle" size="large" />
+          <Avatar image={user.image} shape="circle" />
           <div style={{ minWidth: 0, flex: 1 }}>
             <div
               style={{
                 fontWeight: 600,
-                fontSize: "0.88rem",
+                fontSize: "0.82rem",
                 color: "var(--brand-primary-dark)",
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
+                lineHeight: 1.25,
               }}
             >
               {user.name}
             </div>
             <div
               style={{
-                fontSize: "0.74rem",
+                fontSize: "0.7rem",
                 color: "var(--muted)",
                 whiteSpace: "nowrap",
                 overflow: "hidden",
@@ -263,10 +270,10 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
           </div>
           <span
             style={{
-              fontSize: "0.62rem",
+              fontSize: "0.58rem",
               fontWeight: 700,
-              letterSpacing: "0.06em",
-              padding: "4px 8px",
+              letterSpacing: "0.05em",
+              padding: "3px 7px",
               borderRadius: 999,
               color: "#fff",
               background: roleColors[role] || "var(--brand-primary)",
@@ -282,7 +289,7 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
           style={{
             display: "flex",
             justifyContent: "center",
-            marginBottom: 18,
+            marginBottom: 12,
           }}
         >
           <Avatar image={user.image} shape="circle" />
@@ -290,19 +297,19 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
       )}
 
       {/* MENU */}
-      <div style={{ padding: "0 10px", flex: 1 }}>
+      <div style={{ padding: "0 8px", flex: 1 }}>
         {sections.map((sec) => (
-          <div key={sec.title} style={{ marginBottom: 20 }}>
+          <div key={sec.title} style={{ marginBottom: 8 }}>
             {showLabels && (
               <div
                 style={{
-                  fontSize: "0.68rem",
+                  fontSize: "0.64rem",
                   fontWeight: 700,
-                  letterSpacing: "0.12em",
+                  letterSpacing: "0.1em",
                   textTransform: "uppercase",
                   color: "var(--muted)",
-                  padding: "0 12px",
-                  marginBottom: 10,
+                  padding: "0 10px",
+                  marginBottom: 6,
                 }}
               >
                 {sec.title}
@@ -320,21 +327,21 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 12,
+                    gap: 10,
                     justifyContent:
                       collapsed && !isMobile ? "center" : "flex-start",
-                    padding: collapsed && !isMobile ? "10px" : "10px 12px",
-                    borderRadius: 12,
+                    padding: collapsed && !isMobile ? "8px" : "8px 10px",
+                    borderRadius: 10,
                     textDecoration: "none",
-                    marginBottom: 6,
+                    marginBottom: 2,
                     fontWeight: active ? 600 : 500,
-                    fontSize: "0.9rem",
+                    fontSize: "0.86rem",
                     color: active ? "#fff" : "var(--brand-primary-dark)",
                     background: active
                       ? "linear-gradient(110deg, var(--brand-primary), var(--brand-blue))"
                       : "transparent",
                     boxShadow: active
-                      ? "0 8px 20px rgba(26, 58, 107, 0.25)"
+                      ? "0 6px 16px rgba(26, 58, 107, 0.22)"
                       : "none",
                     transition:
                       "background 0.2s ease, color 0.2s ease, transform 0.15s ease",
@@ -347,12 +354,12 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      width: 32,
-                      height: 32,
-                      minWidth: 32,
-                      minHeight: 32,
-                      borderRadius: 10,
-                      fontSize: 16,
+                      width: 28,
+                      height: 28,
+                      minWidth: 28,
+                      minHeight: 28,
+                      borderRadius: 8,
+                      fontSize: 14,
                       lineHeight: 1,
                       flexShrink: 0,
                       background: active
@@ -368,7 +375,7 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
                     <i
                       className={`pi ${item.icon || "pi-circle"}`}
                       style={{
-                        fontSize: 16,
+                        fontSize: 14,
                         display: "block",
                         color: "inherit",
                       }}
@@ -390,9 +397,9 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
       {/* FOOTER */}
       <div
         style={{
-          padding: "14px 16px",
+          padding: "10px 14px",
           borderTop: "1px solid var(--border)",
-          fontSize: "0.7rem",
+          fontSize: "0.68rem",
           color: "var(--muted)",
           textAlign: "center",
         }}
@@ -400,7 +407,7 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
         {showLabels ? (
           <span>© 2026 AMP Technology</span>
         ) : (
-          <i className="pi pi-shield" style={{ fontSize: 14 }} />
+          <i className="pi pi-shield" style={{ fontSize: 13 }} />
         )}
       </div>
 
