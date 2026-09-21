@@ -20,6 +20,8 @@ type CategoryRow = {
   name: string;
   storeId: string;
   description?: string;
+  image?: string;
+  icon?: string;
   isActive?: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -131,6 +133,26 @@ function Page() {
     );
   }, [categoryData, debouncedSearch]);
 
+  const imageTemplate = (rowData: CategoryRow) =>
+    rowData.image ? (
+      <img
+        src={rowData.image}
+        alt={rowData.name}
+        className="w-12 h-12 rounded-lg object-cover border border-gray-200"
+      />
+    ) : (
+      <div className="w-12 h-12 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center">
+        <i className="pi pi-image text-gray-400"></i>
+      </div>
+    );
+
+  const iconTemplate = (rowData: CategoryRow) =>
+    rowData.icon ? (
+      <span className="text-2xl leading-none">{rowData.icon}</span>
+    ) : (
+      <span className="text-gray-400">-</span>
+    );
+
   const statusTemplate = (rowData: CategoryRow) => (
     <span
       className={`px-2 py-1 rounded-full text-xs font-medium ${
@@ -220,12 +242,22 @@ function Page() {
               className="p-datatable-sm"
               emptyMessage="No categories found"
               dataKey="_id"
-              tableStyle={{ minWidth: "700px" }}
+              tableStyle={{ minWidth: "800px" }}
             >
               <Column
                 header="#"
                 body={(_, options) => options.rowIndex + 1}
                 style={{ width: "60px" }}
+              />
+              <Column
+                header="Image"
+                body={imageTemplate}
+                style={{ width: "90px" }}
+              />
+              <Column
+                header="Icon"
+                body={iconTemplate}
+                style={{ width: "80px" }}
               />
               <Column field="name" header="Name" sortable />
               <Column

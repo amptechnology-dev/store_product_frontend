@@ -16,6 +16,9 @@ import { useProfileStore } from "@/lib/store/profileStore";
 import storeTypeList from "@/lib/storetype.json";
 
 // Zod Schema
+// Store details (contact, whatsapp, location) ekhane optional rakha hoyeche,
+// karon ADMIN create korar shomoy ei field gulo form e thake na.
+// Required check ta superRefine e `requireStoreDetails` flag diye hoy.
 const baseStoreFormSchema = z.object({
   name: z.string().optional(),
   email: z.string().optional(),
@@ -24,23 +27,28 @@ const baseStoreFormSchema = z.object({
   storeName: z.string().min(2, "Store name is required"),
   storeType: z.string().min(1, "Store type is required"),
   description: z.string().optional(),
-  contactNo: z.string().min(10, "Contact number is required"),
-  whatsappNo: z.string().min(10, "WhatsApp number is required"),
+  contactNo: z.string().optional(),
+  whatsappNo: z.string().optional(),
   supportNo: z.string().optional(),
   gstin: z.string().optional(),
   lat: z.number().min(-90).max(90, "Invalid latitude"),
   long: z.number().min(-180).max(180, "Invalid longitude"),
-  area: z.string().min(2, "Area is required"),
-  state: z.string().min(2, "State is required"),
-  country: z.string().min(2, "Country is required"),
+  area: z.string().optional(),
+  state: z.string().optional(),
+  country: z.string().optional(),
   isActive: z.boolean().optional(),
   isVerify: z.boolean().optional(),
 });
 
-const getStoreFormSchema = (isEditMode: boolean, mode: "admin" | "store") =>
+const getStoreFormSchema = (
+  isEditMode: boolean,
+  mode: "admin" | "store",
+  requireStoreDetails: boolean,
+) =>
   baseStoreFormSchema.superRefine((values, context) => {
     const requireOwnerFields = mode !== "store";
 
+    // ---------- Owner fields ----------
     if (requireOwnerFields && !values.name?.trim()) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -87,10 +95,7 @@ const getStoreFormSchema = (isEditMode: boolean, mode: "admin" | "store") =>
         path: ["password"],
         message: "Password is required",
       });
-      return;
-    }
-
-    if (
+    } else if (
       !isEditMode &&
       requireOwnerFields &&
       (values.password?.length || 0) < 6
@@ -100,6 +105,49 @@ const getStoreFormSchema = (isEditMode: boolean, mode: "admin" | "store") =>
         path: ["password"],
         message: "Password must be at least 6 characters",
       });
+    }
+
+    // ---------- Store details (sudhu jokhon form e dekhano hocche) ----------
+    if (requireStoreDetails) {
+      if ((values.contactNo?.trim().length || 0) < 10) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["contactNo"],
+          message: "Contact number is required",
+        });
+      }
+
+      if ((values.whatsappNo?.trim().length || 0) < 10) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["whatsappNo"],
+          message: "WhatsApp number is required",
+        });
+      }
+
+      if ((values.area?.trim().length || 0) < 2) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["area"],
+          message: "Area is required",
+        });
+      }
+
+      if ((values.state?.trim().length || 0) < 2) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["state"],
+          message: "State is required",
+        });
+      }
+
+      if ((values.country?.trim().length || 0) < 2) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["country"],
+          message: "Country is required",
+        });
+      }
     }
   });
 
@@ -333,7 +381,17 @@ function StoreForm({
 
   const isEditMode = !!storeId;
   const isStoreMode = mode === "store" && !isEditMode;
-  const storeFormSchema = getStoreFormSchema(isEditMode, mode);
+
+  // ADMIN notun store add korle: sudhu owner info + store name + store type
+  // STORE user (create/edit) ar ADMIN edit mode: puro form
+  const isAdminCreate = profile?.role === "ADMIN" && !isEditMode;
+  const showStoreDetails = !isAdminCreate;
+
+  const storeFormSchema = getStoreFormSchema(
+    isEditMode,
+    mode,
+    showStoreDetails,
+  );
 
   const {
     register,
@@ -376,7 +434,7 @@ function StoreForm({
   const selectedLat = watch("lat");
   const selectedLong = watch("long");
   const selectedArea = watch("area");
-  const selectedState = watch("state");
+  const selectedState = watch("state") || "";
   const selectedCountry = watch("country") || "India";
   const mapCenter = STATE_CENTERS[selectedState] || [
     INDIA_CENTER.latitude,
@@ -679,27 +737,33 @@ function StoreForm({
           formData.append("password", data.password);
         }
       }
+
+      // Sob mode e lagbe
       formData.append("storeName", data.storeName || "");
       formData.append("storeType", data.storeType || "");
-      formData.append("description", data.description || "");
-      formData.append("contactNo", data.contactNo || "");
-      formData.append("whatsappNo", data.whatsappNo || "");
-      formData.append("supportNo", data.supportNo || "");
-      formData.append("gstin", data.gstin || "");
-      formData.append("lat", data.lat.toString());
-      formData.append("long", data.long.toString());
 
-      formData.append("address[area]", data.area);
-      formData.append("address[state]", data.state);
-      formData.append("address[country]", data.country);
+      // Baki field sudhu jokhon form e dekhano hocche
+      if (showStoreDetails) {
+        formData.append("description", data.description || "");
+        formData.append("contactNo", data.contactNo || "");
+        formData.append("whatsappNo", data.whatsappNo || "");
+        formData.append("supportNo", data.supportNo || "");
+        formData.append("gstin", data.gstin || "");
+        formData.append("lat", data.lat.toString());
+        formData.append("long", data.long.toString());
 
-      existingImages.forEach((url, index) => {
-        formData.append(`existingImages[${index}]`, url);
-      });
+        formData.append("address[area]", data.area || "");
+        formData.append("address[state]", data.state || "");
+        formData.append("address[country]", data.country || "");
 
-      imageFiles.forEach((file, index) => {
-        formData.append(`image[${index}]`, file);
-      });
+        existingImages.forEach((url, index) => {
+          formData.append(`existingImages[${index}]`, url);
+        });
+
+        imageFiles.forEach((file, index) => {
+          formData.append(`image[${index}]`, file);
+        });
+      }
 
       formData.append("isActive", isActive.toString());
       formData.append("isVerify", isVerify.toString());
@@ -755,7 +819,7 @@ function StoreForm({
   }
 
   return (
-    <div className="px-4 pt-2 pb-4 min-h-[80vh]">
+    <div className={`px-4 pt-2 pb-4 ${showStoreDetails ? "min-h-[80vh]" : ""}`}>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         {!isStoreMode && (
           <div className="space-y-3">
@@ -895,399 +959,413 @@ function StoreForm({
               )}
             </div>
 
-            <div className="space-y-1">
-              <label className="text-sm font-semibold text-gray-700 flex items-center gap-1">
-                Contact Number <span className="text-red-500">*</span>
-              </label>
-              <InputText
-                {...register("contactNo")}
-                placeholder="Enter contact number"
-                inputMode="numeric"
-                onInput={(e: React.FormEvent<HTMLInputElement>) => {
-                  e.currentTarget.value = e.currentTarget.value.replace(
-                    /\D/g,
-                    "",
-                  );
-                }}
-                className={`w-full p-2 border rounded-lg ${errors.contactNo ? "border-red-500" : "border-yellow-300"}`}
-              />
-              {errors.contactNo && (
-                <small className="text-red-500">
-                  {errors.contactNo.message}
-                </small>
-              )}
-            </div>
+            {showStoreDetails && (
+              <>
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-gray-700 flex items-center gap-1">
+                    Contact Number <span className="text-red-500">*</span>
+                  </label>
+                  <InputText
+                    {...register("contactNo")}
+                    placeholder="Enter contact number"
+                    inputMode="numeric"
+                    onInput={(e: React.FormEvent<HTMLInputElement>) => {
+                      e.currentTarget.value = e.currentTarget.value.replace(
+                        /\D/g,
+                        "",
+                      );
+                    }}
+                    className={`w-full p-2 border rounded-lg ${errors.contactNo ? "border-red-500" : "border-yellow-300"}`}
+                  />
+                  {errors.contactNo && (
+                    <small className="text-red-500">
+                      {errors.contactNo.message}
+                    </small>
+                  )}
+                </div>
 
-            <div className="space-y-1">
-              <label className="text-sm font-semibold text-gray-700 flex items-center gap-1">
-                WhatsApp Number <span className="text-red-500">*</span>
-              </label>
-              <InputText
-                {...register("whatsappNo")}
-                placeholder="Enter WhatsApp number"
-                inputMode="numeric"
-                onInput={(e: React.FormEvent<HTMLInputElement>) => {
-                  e.currentTarget.value = e.currentTarget.value.replace(
-                    /\D/g,
-                    "",
-                  );
-                }}
-                className={`w-full p-2 border rounded-lg ${errors.whatsappNo ? "border-red-500" : "border-yellow-300"}`}
-              />
-              {errors.whatsappNo && (
-                <small className="text-red-500">
-                  {errors.whatsappNo.message}
-                </small>
-              )}
-            </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-gray-700 flex items-center gap-1">
+                    WhatsApp Number <span className="text-red-500">*</span>
+                  </label>
+                  <InputText
+                    {...register("whatsappNo")}
+                    placeholder="Enter WhatsApp number"
+                    inputMode="numeric"
+                    onInput={(e: React.FormEvent<HTMLInputElement>) => {
+                      e.currentTarget.value = e.currentTarget.value.replace(
+                        /\D/g,
+                        "",
+                      );
+                    }}
+                    className={`w-full p-2 border rounded-lg ${errors.whatsappNo ? "border-red-500" : "border-yellow-300"}`}
+                  />
+                  {errors.whatsappNo && (
+                    <small className="text-red-500">
+                      {errors.whatsappNo.message}
+                    </small>
+                  )}
+                </div>
 
-            <div className="space-y-1">
-              <label className="text-sm font-semibold text-gray-700">
-                Support Number
-              </label>
-              <InputText
-                {...register("supportNo")}
-                placeholder="Enter support number"
-                inputMode="numeric"
-                onInput={(e: React.FormEvent<HTMLInputElement>) => {
-                  e.currentTarget.value = e.currentTarget.value.replace(
-                    /\D/g,
-                    "",
-                  );
-                }}
-                className={`w-full p-2 border rounded-lg ${errors.supportNo ? "border-red-500" : "border-yellow-300"}`}
-              />
-              {errors.supportNo && (
-                <small className="text-red-500">
-                  {errors.supportNo.message}
-                </small>
-              )}
-            </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-gray-700">
+                    Support Number
+                  </label>
+                  <InputText
+                    {...register("supportNo")}
+                    placeholder="Enter support number"
+                    inputMode="numeric"
+                    onInput={(e: React.FormEvent<HTMLInputElement>) => {
+                      e.currentTarget.value = e.currentTarget.value.replace(
+                        /\D/g,
+                        "",
+                      );
+                    }}
+                    className={`w-full p-2 border rounded-lg ${errors.supportNo ? "border-red-500" : "border-yellow-300"}`}
+                  />
+                  {errors.supportNo && (
+                    <small className="text-red-500">
+                      {errors.supportNo.message}
+                    </small>
+                  )}
+                </div>
 
-            <div className="space-y-1 md:col-span-2">
-              <label className="text-sm font-semibold text-gray-700">
-                Description
-              </label>
-              <InputTextarea
-                {...register("description")}
-                placeholder="Enter store description"
-                rows={3}
-                className={`w-full p-2 border rounded-lg ${errors.description ? "border-red-500" : "border-yellow-300"}`}
-              />
-            </div>
+                <div className="space-y-1 md:col-span-2">
+                  <label className="text-sm font-semibold text-gray-700">
+                    Description
+                  </label>
+                  <InputTextarea
+                    {...register("description")}
+                    placeholder="Enter store description"
+                    rows={3}
+                    className={`w-full p-2 border rounded-lg ${errors.description ? "border-red-500" : "border-yellow-300"}`}
+                  />
+                </div>
+              </>
+            )}
           </div>
         </div>
 
         {/* Location Information */}
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
-            <i className="pi pi-map-marker" style={{ color: "#d89f00" }}></i>
-            Location Information
-          </h3>
+        {showStoreDetails && (
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+              <i className="pi pi-map-marker" style={{ color: "#d89f00" }}></i>
+              Location Information
+            </h3>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-sm font-semibold text-gray-700">
-                Country
-              </label>
-              <Controller
-                name="country"
-                control={control}
-                render={({ field }) => (
-                  <InputText
-                    value={field.value || "India"}
-                    readOnly
-                    className="w-full p-2 border rounded-lg border-yellow-300 bg-gray-100 text-gray-700"
-                  />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-sm font-semibold text-gray-700">
+                  Country
+                </label>
+                <Controller
+                  name="country"
+                  control={control}
+                  render={({ field }) => (
+                    <InputText
+                      value={field.value || "India"}
+                      readOnly
+                      className="w-full p-2 border rounded-lg border-yellow-300 bg-gray-100 text-gray-700"
+                    />
+                  )}
+                />
+                {errors.country && (
+                  <small className="text-red-500">
+                    {errors.country.message}
+                  </small>
                 )}
-              />
-              {errors.country && (
-                <small className="text-red-500">{errors.country.message}</small>
-              )}
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-sm font-semibold text-gray-700">
-                State
-              </label>
-              <Controller
-                name="state"
-                control={control}
-                render={({ field }) => (
-                  <Dropdown
-                    value={field.value}
-                    onChange={(e) => field.onChange(e.value)}
-                    options={INDIAN_STATES.map((stateName) => ({
-                      label: stateName,
-                      value: stateName,
-                    }))}
-                    placeholder="Select state"
-                    className={`w-full ${errors.state ? "border-red-500" : "border-yellow-300"}`}
-                    panelClassName="!text-sm"
-                  />
-                )}
-              />
-              {errors.state && (
-                <small className="text-red-500">{errors.state.message}</small>
-              )}
-            </div>
-
-            <div className="space-y-2 md:col-span-2">
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <div>
-                  <label className="text-sm font-semibold text-gray-700 flex items-center gap-1">
-                    Detailed Location <span className="text-red-500">*</span>
-                  </label>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Search by street, house number, landmark, or locality. The
-                    selected state narrows the results.
-                  </p>
-                </div>
-                <div className="text-xs text-gray-500 text-right">
-                  <div>Selected state: {selectedState || "Not selected"}</div>
-                  <div>Country: {selectedCountry || "India"}</div>
-                </div>
               </div>
 
-              <Controller
-                name="area"
-                control={control}
-                render={({ field }) => (
-                  <div className="space-y-3">
-                    <div className="flex flex-col md:flex-row gap-2">
-                      <InputText
-                        value={locationQuery || field.value || ""}
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          setLocationQuery(value);
-                          setSelectedLocationLabel(value);
-                          field.onChange(value);
-                          setLocationResults([]);
-                        }}
-                        placeholder="15 Sridhar Chakrabory Street, Uttarpara"
-                        className={`w-full p-2 border rounded-lg ${errors.area ? "border-red-500" : "border-yellow-300"}`}
-                      />
-                      <Button
-                        type="button"
-                        label={isSearchingLocation ? "Searching..." : "Search"}
-                        icon={
-                          isSearchingLocation
-                            ? "pi pi-spin pi-spinner"
-                            : "pi pi-search"
-                        }
-                        onClick={searchDetailedLocation}
-                        className="!bg-yellow-400 !text-gray-900 !border-yellow-500 md:!w-40"
-                        disabled={isSearchingLocation}
-                      />
-                    </div>
+              <div className="space-y-1">
+                <label className="text-sm font-semibold text-gray-700">
+                  State
+                </label>
+                <Controller
+                  name="state"
+                  control={control}
+                  render={({ field }) => (
+                    <Dropdown
+                      value={field.value}
+                      onChange={(e) => field.onChange(e.value)}
+                      options={INDIAN_STATES.map((stateName) => ({
+                        label: stateName,
+                        value: stateName,
+                      }))}
+                      placeholder="Select state"
+                      className={`w-full ${errors.state ? "border-red-500" : "border-yellow-300"}`}
+                      panelClassName="!text-sm"
+                    />
+                  )}
+                />
+                {errors.state && (
+                  <small className="text-red-500">{errors.state.message}</small>
+                )}
+              </div>
 
-                    {locationResults.length > 0 && (
-                      <div className="rounded-2xl border border-yellow-200 bg-white shadow-[0_10px_24px_rgba(15,23,42,0.08)] overflow-hidden">
-                        <div className="px-4 py-3 border-b border-yellow-100 bg-yellow-50/70">
-                          <p className="text-sm font-semibold text-gray-800 m-0">
-                            Select the exact place
-                          </p>
-                          <p className="text-xs text-gray-500 mt-1 m-0">
-                            Pick the matching street-level result to place the
-                            map pin precisely.
-                          </p>
-                        </div>
-                        <div className="max-h-56 overflow-auto divide-y divide-yellow-100">
-                          {locationResults.map((result, index) => {
-                            const itemLabel = formatDetailedLocation(
-                              result.address || {},
-                              result.display_name,
-                            );
+              <div className="space-y-2 md:col-span-2">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div>
+                    <label className="text-sm font-semibold text-gray-700 flex items-center gap-1">
+                      Detailed Location <span className="text-red-500">*</span>
+                    </label>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Search by street, house number, landmark, or locality. The
+                      selected state narrows the results.
+                    </p>
+                  </div>
+                  <div className="text-xs text-gray-500 text-right">
+                    <div>Selected state: {selectedState || "Not selected"}</div>
+                    <div>Country: {selectedCountry || "India"}</div>
+                  </div>
+                </div>
 
-                            return (
-                              <button
-                                key={`${result.display_name}-${index}`}
-                                type="button"
-                                onClick={() => applyLocationResult(result)}
-                                className="w-full text-left px-4 py-3 hover:bg-yellow-50 transition"
-                              >
-                                <div className="flex items-start gap-3">
-                                  <div className="mt-1 flex h-8 w-8 items-center justify-center rounded-full bg-yellow-100 text-yellow-700">
-                                    <i className="pi pi-map-marker" />
-                                  </div>
-                                  <div className="min-w-0 flex-1">
-                                    <div className="text-sm font-semibold text-gray-800 leading-6 truncate">
-                                      {itemLabel}
-                                    </div>
-                                    <div className="text-xs text-gray-500 mt-1">
-                                      Lat {Number(result.lat).toFixed(6)} | Long{" "}
-                                      {Number(result.lon).toFixed(6)}
-                                    </div>
-                                  </div>
-                                </div>
-                              </button>
-                            );
-                          })}
-                        </div>
+                <Controller
+                  name="area"
+                  control={control}
+                  render={({ field }) => (
+                    <div className="space-y-3">
+                      <div className="flex flex-col md:flex-row gap-2">
+                        <InputText
+                          value={locationQuery || field.value || ""}
+                          onChange={(event) => {
+                            const value = event.target.value;
+                            setLocationQuery(value);
+                            setSelectedLocationLabel(value);
+                            field.onChange(value);
+                            setLocationResults([]);
+                          }}
+                          placeholder="15 Sridhar Chakrabory Street, Uttarpara"
+                          className={`w-full p-2 border rounded-lg ${errors.area ? "border-red-500" : "border-yellow-300"}`}
+                        />
+                        <Button
+                          type="button"
+                          label={
+                            isSearchingLocation ? "Searching..." : "Search"
+                          }
+                          icon={
+                            isSearchingLocation
+                              ? "pi pi-spin pi-spinner"
+                              : "pi pi-search"
+                          }
+                          onClick={searchDetailedLocation}
+                          className="!bg-yellow-400 !text-gray-900 !border-yellow-500 md:!w-40"
+                          disabled={isSearchingLocation}
+                        />
                       </div>
-                    )}
 
-                    {errors.area && (
-                      <small className="text-red-500">
-                        {errors.area.message}
-                      </small>
-                    )}
+                      {locationResults.length > 0 && (
+                        <div className="rounded-2xl border border-yellow-200 bg-white shadow-[0_10px_24px_rgba(15,23,42,0.08)] overflow-hidden">
+                          <div className="px-4 py-3 border-b border-yellow-100 bg-yellow-50/70">
+                            <p className="text-sm font-semibold text-gray-800 m-0">
+                              Select the exact place
+                            </p>
+                            <p className="text-xs text-gray-500 mt-1 m-0">
+                              Pick the matching street-level result to place the
+                              map pin precisely.
+                            </p>
+                          </div>
+                          <div className="max-h-56 overflow-auto divide-y divide-yellow-100">
+                            {locationResults.map((result, index) => {
+                              const itemLabel = formatDetailedLocation(
+                                result.address || {},
+                                result.display_name,
+                              );
+
+                              return (
+                                <button
+                                  key={`${result.display_name}-${index}`}
+                                  type="button"
+                                  onClick={() => applyLocationResult(result)}
+                                  className="w-full text-left px-4 py-3 hover:bg-yellow-50 transition"
+                                >
+                                  <div className="flex items-start gap-3">
+                                    <div className="mt-1 flex h-8 w-8 items-center justify-center rounded-full bg-yellow-100 text-yellow-700">
+                                      <i className="pi pi-map-marker" />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                      <div className="text-sm font-semibold text-gray-800 leading-6 truncate">
+                                        {itemLabel}
+                                      </div>
+                                      <div className="text-xs text-gray-500 mt-1">
+                                        Lat {Number(result.lat).toFixed(6)} |
+                                        Long {Number(result.lon).toFixed(6)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {errors.area && (
+                        <small className="text-red-500">
+                          {errors.area.message}
+                        </small>
+                      )}
+                    </div>
+                  )}
+                />
+              </div>
+
+              <div className="space-y-2 md:col-span-2">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div>
+                    <label className="text-sm font-semibold text-gray-700">
+                      Refine on map
+                    </label>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Click the map or drag the marker after choosing a detailed
+                      location.
+                    </p>
                   </div>
-                )}
-              />
-            </div>
-
-            <div className="space-y-2 md:col-span-2">
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <div>
-                  <label className="text-sm font-semibold text-gray-700">
-                    Refine on map
-                  </label>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Click the map or drag the marker after choosing a detailed
-                    location.
-                  </p>
+                  <div className="text-xs text-gray-500 text-right">
+                    <div>
+                      Lat:{" "}
+                      {Number(selectedLat || INDIA_CENTER.latitude).toFixed(6)}
+                    </div>
+                    <div>
+                      Long:{" "}
+                      {Number(selectedLong || INDIA_CENTER.longitude).toFixed(
+                        6,
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div className="text-xs text-gray-500 text-right">
-                  <div>
-                    Lat:{" "}
-                    {Number(selectedLat || INDIA_CENTER.latitude).toFixed(6)}
-                  </div>
-                  <div>
-                    Long:{" "}
-                    {Number(selectedLong || INDIA_CENTER.longitude).toFixed(6)}
-                  </div>
+
+                <div
+                  className="rounded-2xl overflow-hidden border border-yellow-200 shadow-[0_16px_40px_rgba(15,23,42,0.12)]"
+                  style={{
+                    minHeight: 320,
+                    background:
+                      "linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(255,251,236,0.98) 100%)",
+                  }}
+                >
+                  {isMapLoading ? (
+                    <div className="h-[420px] flex items-center justify-center bg-gradient-to-br from-yellow-50 to-white text-gray-600">
+                      Resolving location...
+                    </div>
+                  ) : (
+                    <LocationPicker
+                      latitude={Number(selectedLat || INDIA_CENTER.latitude)}
+                      longitude={Number(selectedLong || INDIA_CENTER.longitude)}
+                      center={mapCenter}
+                      selectedLocation={
+                        selectedLocationLabel ||
+                        locationQuery ||
+                        selectedArea ||
+                        undefined
+                      }
+                      onPick={(latitude, longitude) => {
+                        void setLocationFromMap(latitude, longitude);
+                      }}
+                    />
+                  )}
                 </div>
               </div>
 
-              <div
-                className="rounded-2xl overflow-hidden border border-yellow-200 shadow-[0_16px_40px_rgba(15,23,42,0.12)]"
-                style={{
-                  minHeight: 320,
-                  background:
-                    "linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(255,251,236,0.98) 100%)",
-                }}
-              >
-                {isMapLoading ? (
-                  <div className="h-[420px] flex items-center justify-center bg-gradient-to-br from-yellow-50 to-white text-gray-600">
-                    Resolving location...
-                  </div>
-                ) : (
-                  <LocationPicker
-                    latitude={Number(selectedLat || INDIA_CENTER.latitude)}
-                    longitude={Number(selectedLong || INDIA_CENTER.longitude)}
-                    center={mapCenter}
-                    selectedLocation={
-                      selectedLocationLabel ||
-                      locationQuery ||
-                      selectedArea ||
-                      undefined
-                    }
-                    onPick={(latitude, longitude) => {
-                      void setLocationFromMap(latitude, longitude);
-                    }}
-                  />
-                )}
+              <div className="space-y-1">
+                <label className="text-sm font-semibold text-gray-700">
+                  GSTIN
+                </label>
+                <InputText
+                  {...register("gstin")}
+                  placeholder="Enter GSTIN"
+                  className={`w-full p-2 border rounded-lg border-yellow-300`}
+                />
               </div>
-            </div>
 
-            <div className="space-y-1">
-              <label className="text-sm font-semibold text-gray-700">
-                GSTIN
-              </label>
-              <InputText
-                {...register("gstin")}
-                placeholder="Enter GSTIN"
-                className={`w-full p-2 border rounded-lg border-yellow-300`}
+              <input
+                type="hidden"
+                {...register("lat", { valueAsNumber: true })}
+              />
+              <input
+                type="hidden"
+                {...register("long", { valueAsNumber: true })}
               />
             </div>
-
-            <input
-              type="hidden"
-              {...register("lat", { valueAsNumber: true })}
-            />
-            <input
-              type="hidden"
-              {...register("long", { valueAsNumber: true })}
-            />
           </div>
-        </div>
+        )}
 
         {/* Images */}
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
-            <i className="pi pi-image" style={{ color: "#d89f00" }}></i>
-            Store Images
-          </h3>
+        {showStoreDetails && (
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+              <i className="pi pi-image" style={{ color: "#d89f00" }}></i>
+              Store Images
+            </h3>
 
-          {existingImages.length > 0 && (
-            <div>
-              <label className="text-sm font-semibold text-gray-700 block mb-2">
-                Existing Images
-              </label>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {existingImages.map((img, idx) => (
-                  <div key={idx} className="relative group">
-                    <img
-                      src={img}
-                      alt={`Existing ${idx}`}
-                      className="w-full h-24 object-cover rounded-lg border-2 border-yellow-300"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeImage(idx, true)}
-                      className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition"
-                    >
-                      <i className="pi pi-times text-xs"></i>
-                    </button>
-                  </div>
-                ))}
+            {existingImages.length > 0 && (
+              <div>
+                <label className="text-sm font-semibold text-gray-700 block mb-2">
+                  Existing Images
+                </label>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {existingImages.map((img, idx) => (
+                    <div key={idx} className="relative group">
+                      <img
+                        src={img}
+                        alt={`Existing ${idx}`}
+                        className="w-full h-24 object-cover rounded-lg border-2 border-yellow-300"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeImage(idx, true)}
+                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition"
+                      >
+                        <i className="pi pi-times text-xs"></i>
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {imagePreviews.length > 0 && (
-            <div>
-              <label className="text-sm font-semibold text-gray-700 block mb-2">
-                New Images Preview
-              </label>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {imagePreviews.map((preview, idx) => (
-                  <div key={idx} className="relative group">
-                    <img
-                      src={preview}
-                      alt={`Preview ${idx}`}
-                      className="w-full h-24 object-cover rounded-lg border-2 border-green-300"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeImage(idx, false)}
-                      className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition"
-                    >
-                      <i className="pi pi-times text-xs"></i>
-                    </button>
-                  </div>
-                ))}
+            {imagePreviews.length > 0 && (
+              <div>
+                <label className="text-sm font-semibold text-gray-700 block mb-2">
+                  New Images Preview
+                </label>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {imagePreviews.map((preview, idx) => (
+                    <div key={idx} className="relative group">
+                      <img
+                        src={preview}
+                        alt={`Preview ${idx}`}
+                        className="w-full h-24 object-cover rounded-lg border-2 border-green-300"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeImage(idx, false)}
+                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition"
+                      >
+                        <i className="pi pi-times text-xs"></i>
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          <div className="space-y-1">
-            <label className="text-sm font-semibold text-gray-700">
-              Add More Images
-            </label>
-            <input
-              type="file"
-              multiple
-              onChange={handleImageChange}
-              className="w-full p-2 border border-yellow-300 rounded-lg"
-              accept="image/*"
-            />
-            <small className="text-gray-600">
-              Total images: {existingImages.length + imageFiles.length}
-            </small>
+            <div className="space-y-1">
+              <label className="text-sm font-semibold text-gray-700">
+                Add More Images
+              </label>
+              <input
+                type="file"
+                multiple
+                onChange={handleImageChange}
+                className="w-full p-2 border border-yellow-300 rounded-lg"
+                accept="image/*"
+              />
+              <small className="text-gray-600">
+                Total images: {existingImages.length + imageFiles.length}
+              </small>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Status & Verification */}
         {isEditMode && (
