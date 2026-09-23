@@ -15,6 +15,17 @@ import { Button } from "primereact/button";
 import { formatDate } from "@/helper/DateTime";
 import ProductFrom from "@/components/product/ProductFrom";
 
+type ProductVariant = {
+  _id?: string;
+  size?: string;
+  weight?: string;
+  mrp: number;
+  offerPrice: number;
+  stock?: number;
+  sku?: string;
+  isActive?: boolean;
+};
+
 type ProductRow = {
   _id: string;
   name?: string;
@@ -22,10 +33,9 @@ type ProductRow = {
   description?: string;
   images?: string[];
   unit?: string;
-  size?: string;
-  weight?: string;
-  mrp?: number;
-  offerPrice?: number;
+  variants: ProductVariant[];
+  minOfferPrice?: number;
+  maxOfferPrice?: number;
   deliveryTime?: string;
   isActive?: boolean;
   storeId?: string;
@@ -73,6 +83,26 @@ const stringToBg = (str?: string) => {
   }
 
   return colors[Math.abs(hash) % colors.length];
+};
+
+// variants array theke display-er jonno helper gulo
+const getVariants = (product: ProductRow): ProductVariant[] =>
+  Array.isArray(product.variants) ? product.variants : [];
+
+const getPriceRangeLabel = (product: ProductRow) => {
+  const variants = getVariants(product);
+  if (variants.length === 0) return "-";
+
+  const offerPrices = variants.map((v) => Number(v.offerPrice || 0));
+  const min = Math.min(...offerPrices);
+  const max = Math.max(...offerPrices);
+
+  return min === max ? `₹${min.toFixed(2)}` : `₹${min.toFixed(2)} - ₹${max.toFixed(2)}`;
+};
+
+const getVariantLabel = (v: ProductVariant) => {
+  const parts = [v.size, v.weight].filter(Boolean);
+  return parts.length ? parts.join(" / ") : "-";
 };
 
 const EmptyState = () => (
@@ -374,6 +404,8 @@ function Page() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
               {productList.map((product) => {
                 const storeName = product.store?.storeName || "Unknown Store";
+                const variants = getVariants(product);
+
                 return (
                   <div key={product._id} className="w-full">
                     <div className="bg-white rounded-xl shadow-md hover:shadow-lg transition-shadow overflow-hidden border border-gray-200 flex flex-col h-full">
@@ -394,21 +426,47 @@ function Page() {
                             <span className="font-medium">🏷️ Code:</span>{" "}
                             {product.productCode || "-"}
                           </p>
+
                           <p className="flex items-center gap-2">
                             <span className="font-medium">💰 Price:</span>
-                            <span className="line-through text-gray-400">
-                              ₹{Number(product.mrp || 0).toFixed(2)}
-                            </span>
                             <span className="text-green-700 font-semibold">
-                              ₹{Number(product.offerPrice || 0).toFixed(2)}
+                              {getPriceRangeLabel(product)}
                             </span>
                           </p>
+
                           <p>
                             <span className="font-medium">📦 Unit:</span>{" "}
                             {product.unit || "-"}
-                            {product.size ? ` • ${product.size}` : ""}
-                            {product.weight ? ` • ${product.weight}` : ""}
                           </p>
+
+                          {/* Variant-wise size/weight + price list */}
+                          {variants.length > 0 && (
+                            <div className="pt-1">
+                              <span className="font-medium">📐 Variants:</span>
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {variants.map((v, idx) => (
+                                  <span
+                                    key={v._id || idx}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 border border-gray-200 text-[11px]"
+                                    title={`MRP ₹${Number(v.mrp || 0).toFixed(2)}`}
+                                  >
+                                    <span className="font-medium">
+                                      {getVariantLabel(v)}
+                                    </span>
+                                    <span className="text-green-700 font-semibold">
+                                      ₹{Number(v.offerPrice || 0).toFixed(2)}
+                                    </span>
+                                    {v.stock !== undefined && (
+                                      <span className="text-gray-500">
+                                        (Stock: {v.stock})
+                                      </span>
+                                    )}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
                           <p>
                             <span className="font-medium">🗂️ Category:</span>{" "}
                             {product.category?.name || "-"}
@@ -530,15 +588,25 @@ function Page() {
             <Column field="name" header="Name" sortable />
             <Column field="description" header="Description" />
             <Column
-              header="Price (Offer / MRP)"
-              body={(row: ProductRow) => (
-                <span>
-                  ₹{Number(row.offerPrice || 0).toFixed(2)}{" "}
-                  <span className="line-through text-gray-400">
-                    ₹{Number(row.mrp || 0).toFixed(2)}
-                  </span>
-                </span>
-              )}
+              header="Variants (Size/Weight - Offer Price)"
+              body={(row: ProductRow) => {
+                const variants = getVariants(row);
+                if (variants.length === 0) return "-";
+                return (
+                  <div className="flex flex-col gap-0.5">
+                    {variants.map((v, idx) => (
+                      <span key={v._id || idx} className="text-xs">
+                        <span className="font-medium">{getVariantLabel(v)}</span>
+                        {" — "}
+                        ₹{Number(v.offerPrice || 0).toFixed(2)}{" "}
+                        <span className="line-through text-gray-400">
+                          ₹{Number(v.mrp || 0).toFixed(2)}
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+                );
+              }}
             />
             <Column field="unit" header="Unit" />
             <Column

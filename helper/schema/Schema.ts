@@ -52,48 +52,53 @@ export const updateUserSchema = zod.object({
   isActive: zod.boolean().optional(),
 });
 
-export const createProductSchema = zod
+const variantSchema = zod
   .object({
-    name: zod.string().min(1, "Product name is required").trim(),
-    description: zod.string().min(1, "Description is required"),
-    unit: zod.string().min(1, "Unit is required"),
-    size: zod.string().optional(),
-    weight: zod.string().optional(),
+    size: zod.string().trim().optional(),
+    weight: zod.string().trim().optional(),
     mrp: zod.coerce
       .number({ error: "MRP is required" })
       .nonnegative("MRP must be >= 0"),
     offerPrice: zod.coerce
       .number({ error: "Offer price is required" })
       .nonnegative("Offer price must be >= 0"),
-    deliveryTime: zod.string().optional(),
-    storeId: objectIdSchema,
-    categoryId: objectIdSchema,
+    stock: zod.coerce
+      .number()
+      .nonnegative("Stock must be >= 0")
+      .optional()
+      .default(0),
+    sku: zod.string().trim().optional(),
   })
-  .refine((data) => data.offerPrice <= data.mrp, {
+  .refine((v) => !!v.size || !!v.weight, {
+    message: "Size or weight is required",
+    path: ["size"],
+  })
+  .refine((v) => v.offerPrice <= v.mrp, {
     message: "Offer price cannot be greater than MRP",
     path: ["offerPrice"],
   });
 
-export const updateProductSchema = zod
-  .object({
-    name: zod.string().min(1).trim().optional(),
-    description: zod.string().min(1).optional(),
-    unit: zod.string().min(1).optional(),
-    size: zod.string().optional(),
-    weight: zod.string().optional(),
-    mrp: zod.coerce.number().nonnegative().optional(),
-    offerPrice: zod.coerce.number().nonnegative().optional(),
-    deliveryTime: zod.string().optional(),
-    storeId: objectIdSchema.optional(),
-    categoryId: objectIdSchema.optional(),
-  })
-  .refine(
-    (data) =>
-      data.mrp === undefined || data.offerPrice === undefined
-        ? true
-        : data.offerPrice <= data.mrp,
-    { message: "Offer price cannot be greater than MRP", path: ["offerPrice"] }
-  );
+export const createProductSchema = zod.object({
+  name: zod.string().min(1, "Product name is required").trim(),
+  description: zod.string().min(1, "Description is required"),
+  unit: zod.string().min(1, "Unit is required"),
+  deliveryTime: zod.string().optional(),
+  storeId: objectIdSchema,
+  categoryId: objectIdSchema,
+  variants: zod
+    .array(variantSchema)
+    .min(1, "At least one variant is required"),
+});
+
+export const updateProductSchema = zod.object({
+  name: zod.string().min(1).trim().optional(),
+  description: zod.string().min(1).optional(),
+  unit: zod.string().min(1).optional(),
+  deliveryTime: zod.string().optional(),
+  storeId: objectIdSchema.optional(),
+  categoryId: objectIdSchema.optional(),
+  variants: zod.array(variantSchema).min(1).optional(),
+});
 
 export const createFinancialYearSchema = zod.object({
   name: zod

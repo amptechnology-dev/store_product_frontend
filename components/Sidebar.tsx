@@ -44,6 +44,7 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
 
   const isActive = (href?: string) => {
     if (!href) return false;
+    if (href === "/dashboard") return pathname === "/dashboard";
     return pathname === href || pathname.startsWith(href + "/");
   };
 
@@ -103,6 +104,7 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
     {
       title: "Menu",
       items: [
+        { label: "Dashboard", icon: "pi-th-large", href: "/dashboard" },
         ...(role === "ADMIN"
           ? [
               {
@@ -110,11 +112,6 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
                 icon: "pi-megaphone",
                 href: "/dashboard/ads",
               },
-              // {
-              //   label: "User Actions",
-              //   icon: "pi-history",
-              //   href: "/dashboard/store-actions",
-              // },
             ]
           : []),
         ...(role === "STORE"

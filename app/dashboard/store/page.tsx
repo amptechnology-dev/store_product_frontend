@@ -170,6 +170,58 @@ function StoreListPage() {
     return colors[Math.abs(hash) % colors.length];
   };
 
+  const getStoreUrl = (storeUniqueId?: string) => {
+    if (!storeUniqueId) return "";
+    const baseUrl = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/+$/, "");
+    return `${baseUrl}/store/${storeUniqueId}`;
+  };
+
+  const copyToClipboard = async (text: string) => {
+    if (navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch {
+        // fall through to fallback
+      }
+    }
+
+    try {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.left = "-9999px";
+      textarea.style.top = "0";
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      const success = document.execCommand("copy");
+      document.body.removeChild(textarea);
+      return success;
+    } catch {
+      return false;
+    }
+  };
+
+  const handleCopyStoreUrl = async (storeUniqueId?: string) => {
+    const url = getStoreUrl(storeUniqueId);
+    if (!url) return;
+    const success = await copyToClipboard(url);
+    if (success) {
+      toast.success("Store URL copied to clipboard");
+    } else {
+      toast.error("Failed to copy URL");
+    }
+  };
+
+  const handleShareOnWhatsApp = (storeUniqueId?: string) => {
+    const url = getStoreUrl(storeUniqueId);
+    if (!url) return;
+    const message = `Check out our store: ${url}`;
+    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+    window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+  };
+
   const storeCardTemplate = (store: any) => {
     const initials = getInitials(store?.storeName || "");
     const bgClass = stringToBg(store?.storeName || "");
@@ -344,6 +396,7 @@ function StoreListPage() {
   /* ================= STORE (single) USER VIEW ================= */
   if (isStoreUser) {
     const myStore = storeData[0];
+    const storeUrl = getStoreUrl(myStore?.storeUniqueId);
 
     return (
       <div className="w-full flex justify-start items-start pt-2">
@@ -437,6 +490,74 @@ function StoreListPage() {
                     )}
                   </div>
                 </div>
+
+                {storeUrl && (
+                  <div
+                    className="mt-4 rounded-xl p-3 sm:p-4 border"
+                    style={{
+                      background: "var(--surface-soft)",
+                      borderColor: "var(--border)",
+                    }}
+                  >
+                    <p
+                      className="text-xs sm:text-sm font-semibold mb-2 flex items-center gap-1.5"
+                      style={{ color: "var(--brand-primary-dark)" }}
+                    >
+                      <i className="pi pi-globe"></i>
+                      Your store URL for app
+                    </p>
+
+                    <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                      {/* ✅ FIX: purely display text, <a href> na — direct browser e khulbe na */}
+                      <span
+                        className="text-xs sm:text-sm font-medium break-all flex-1 select-all"
+                        style={{ color: "var(--foreground)" }}
+                      >
+                        {storeUrl}
+                      </span>
+
+                      <div className="flex gap-2 shrink-0">
+                        <Button
+                          icon="pi pi-copy"
+                          label="Copy"
+                          onClick={() =>
+                            handleCopyStoreUrl(myStore.storeUniqueId)
+                          }
+                          className="text-xs"
+                          style={{
+                            background: "var(--brand-primary)",
+                            color: "#fff",
+                            border: "1px solid var(--brand-primary-dark)",
+                            padding: "6px 12px",
+                          }}
+                        />
+                        {/* ✅ FIX: external-link (browser open) er bodole WhatsApp share button */}
+                        <Button
+                          icon="pi pi-whatsapp"
+                          label="Share"
+                          onClick={() =>
+                            handleShareOnWhatsApp(myStore.storeUniqueId)
+                          }
+                          className="text-xs"
+                          style={{
+                            background: "#25D366",
+                            color: "#fff",
+                            border: "1px solid #1ebe57",
+                            padding: "6px 12px",
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <p
+                      className="text-[11px] mt-2"
+                      style={{ color: "var(--muted)" }}
+                    >
+                      This link only works inside the app — share it via
+                      WhatsApp or copy and send it to your customers.
+                    </p>
+                  </div>
+                )}
 
                 {/* Details grid */}
                 <div
