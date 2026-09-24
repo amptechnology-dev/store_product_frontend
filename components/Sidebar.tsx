@@ -117,6 +117,11 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
         ...(role === "STORE"
           ? [
               {
+                label: "Banners",
+                icon: "pi-image",
+                href: "/dashboard/banners",
+              },
+              {
                 label: "Categories",
                 icon: "pi-tags",
                 href: "/dashboard/categories",

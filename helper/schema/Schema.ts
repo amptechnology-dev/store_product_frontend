@@ -100,6 +100,13 @@ export const updateProductSchema = zod.object({
   variants: zod.array(variantSchema).min(1).optional(),
 });
 
+export const createBannerSchema = zod.object({
+  name: zod.string().trim().min(1, "Banner name is required"),
+  storeId: zod.string().min(1, "Store is required"),
+});
+
+export const updateBannerSchema = createBannerSchema.partial();
+
 export const createFinancialYearSchema = zod.object({
   name: zod
     .string()
@@ -275,3 +282,4 @@ export const createPurchaseSchema = zod
       });
     }
   });
+  
