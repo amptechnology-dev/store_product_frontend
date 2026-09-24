@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Avatar } from "primereact/avatar";
+import { useNotifications } from "@/lib/NotificationContext";
 
 // ---------------- TYPES ----------------
 
@@ -41,6 +42,7 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const { unreadCount } = useNotifications();
 
   const isActive = (href?: string) => {
     if (!href) return false;
@@ -320,6 +322,8 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
 
             {sec.items.map((item) => {
               const active = isActive(item.href);
+              const showBadge =
+                item.label === "Orders" && role === "STORE" && unreadCount > 0; // 👈 add
 
               return (
                 <Link
@@ -353,6 +357,7 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
                   <span
                     className="sidebar-icon"
                     style={{
+                      position: "relative", // 👈 add
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
@@ -382,6 +387,32 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
                         color: "inherit",
                       }}
                     />
+
+                    {/* 👇 Notification badge */}
+                    {showBadge && (
+                      <span
+                        style={{
+                          position: "absolute",
+                          top: -5,
+                          right: -5,
+                          minWidth: 16,
+                          height: 16,
+                          padding: "0 3px",
+                          borderRadius: 999,
+                          background: "#e53935",
+                          color: "#fff",
+                          fontSize: 9.5,
+                          fontWeight: 700,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          border: "2px solid var(--surface)",
+                          lineHeight: 1,
+                        }}
+                      >
+                        {unreadCount > 9 ? "9+" : unreadCount}
+                      </span>
+                    )}
                   </span>
 
                   {showLabels && (

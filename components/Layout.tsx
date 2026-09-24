@@ -3,7 +3,8 @@
 import React, { useEffect, useState } from "react";
 import Sidebar from "./Sidebar";
 import Navbar from "./Navbar";
-import { Role, useProfileStore } from "@/lib/store/profileStore"
+import { Role, useProfileStore } from "@/lib/store/profileStore";
+import { NotificationProvider } from "@/lib/NotificationContext";
 import "primeicons/primeicons.css";
 interface LayoutProps {
   children: React.ReactNode;
@@ -13,9 +14,7 @@ interface LayoutProps {
   };
 }
 
-const Layout: React.FC<LayoutProps> = ({
-  children,
-}) => {
+const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
@@ -54,44 +53,59 @@ const Layout: React.FC<LayoutProps> = ({
     };
   }, []);
 
-
   const role: Role = profile?.role ?? "ADMIN";
-  const name = profile?.name ?? "ADMIN"
-  const image = "/img/avatars/avatar-2.jpg"
-  const email = profile?.email ?? "admin@gmail.com"
+  const name = profile?.name ?? "ADMIN";
+  const image = "/img/avatars/avatar-2.jpg";
+  const email = profile?.email ?? "admin@gmail.com";
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: "#f8fafc" ,overflowX: "hidden",}}>
-      {/* Sidebar - Fixed */}
-      <Sidebar user={{ name: name, email: email, image: image }} role={role} />
-      {/* Main Content Area */}
+    <NotificationProvider enabled={role === "STORE"}>
       <div
         style={{
-          flex: 1,
-          marginLeft: isMobile ? "0" : (collapsed ? "88px" : "260px"),
-          transition: "margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
           display: "flex",
-          flexDirection: "column",
           minHeight: "100vh",
+          background: "#f8fafc",
+          overflowX: "hidden",
         }}
       >
-        {/* Navbar - Fixed */}
-        <Navbar role={role} user={{ name: name, image: image }} />
-
-        {/* Page Content */}
-        <main
+        {/* Sidebar - Fixed */}
+        <Sidebar
+          user={{ name: name, email: email, image: image }}
+          role={role}
+        />
+        {/* Main Content Area */}
+        <div
           style={{
             flex: 1,
-            marginTop: "72px", // Height of navbar
-            padding: isMobile ? "16px" : "20px",
-            overflowY: "auto",
-            width: isMobile ? "100vw" : (collapsed ? "calc(100vw - 88px)" : "calc(100vw - 260px)"),
+            marginLeft: isMobile ? "0" : collapsed ? "88px" : "260px",
+            transition: "margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+            display: "flex",
+            flexDirection: "column",
+            minHeight: "100vh",
           }}
         >
-        {children}
-        </main>
+          {/* Navbar - Fixed */}
+          <Navbar role={role} user={{ name: name, image: image }} />
+
+          {/* Page Content */}
+          <main
+            style={{
+              flex: 1,
+              marginTop: "72px", // Height of navbar
+              padding: isMobile ? "16px" : "20px",
+              overflowY: "auto",
+              width: isMobile
+                ? "100vw"
+                : collapsed
+                  ? "calc(100vw - 88px)"
+                  : "calc(100vw - 260px)",
+            }}
+          >
+            {children}
+          </main>
+        </div>
       </div>
-    </div>
+    </NotificationProvider>
   );
 };
 

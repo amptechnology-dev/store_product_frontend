@@ -24,6 +24,7 @@ import {
   getNextStatuses,
   updateOrderStatusApi,
 } from "@/types/order";
+import { useNotifications } from "@/lib/NotificationContext";
 
 const ENDPOINT = "/api/order/store-orders";
 
@@ -39,6 +40,7 @@ const EmptyState = () => (
 
 function OrdersPage() {
   const router = useRouter();
+  const { markAllRead } = useNotifications();
 
   const [loading, setLoading] = useState(false);
   const [orderData, setOrderData] = useState<OrderRow[]>([]);
@@ -56,6 +58,10 @@ function OrdersPage() {
     orderId: string | null;
   }>({ visible: false, orderId: null });
   const [cancelNote, setCancelNote] = useState("");
+
+  useEffect(() => {
+    markAllRead();
+  }, []);
 
   useEffect(() => {
     getOrders();
@@ -105,7 +111,11 @@ function OrdersPage() {
   };
 
   // ---- Status change (list theke direct) ----
-  const applyStatusChange = async (orderId: string, status: OrderStatus, note?: string) => {
+  const applyStatusChange = async (
+    orderId: string,
+    status: OrderStatus,
+    note?: string,
+  ) => {
     try {
       setUpdatingId(orderId);
       const res = await updateOrderStatusApi(orderId, status, note);
@@ -140,7 +150,11 @@ function OrdersPage() {
 
   const confirmCancelOrder = async () => {
     if (!cancelDialog.orderId) return;
-    await applyStatusChange(cancelDialog.orderId, "CANCELLED", cancelNote.trim() || undefined);
+    await applyStatusChange(
+      cancelDialog.orderId,
+      "CANCELLED",
+      cancelNote.trim() || undefined,
+    );
     setCancelDialog({ visible: false, orderId: null });
     setCancelNote("");
   };
@@ -155,7 +169,9 @@ function OrdersPage() {
 
   const customerTemplate = (rowData: OrderRow) => (
     <div>
-      <p className="font-medium text-gray-800">{rowData.userId?.name || "N/A"}</p>
+      <p className="font-medium text-gray-800">
+        {rowData.userId?.name || "N/A"}
+      </p>
       <p className="text-xs text-gray-500">{rowData.userId?.phone}</p>
     </div>
   );
@@ -168,7 +184,9 @@ function OrdersPage() {
 
   const amountTemplate = (rowData: OrderRow) => (
     <div>
-      <p className="font-semibold text-gray-800">₹{Number(rowData.totalAmount).toFixed(2)}</p>
+      <p className="font-semibold text-gray-800">
+        ₹{Number(rowData.totalAmount).toFixed(2)}
+      </p>
       <p className="text-xs text-gray-400 line-through">
         ₹{Number(rowData.totalMrp).toFixed(2)}
       </p>
@@ -206,12 +224,17 @@ function OrdersPage() {
       style={{ background: "linear-gradient(120deg,#f3be27,#e4a90e)" }}
     >
       <div className="min-w-0">
-        <h2 className="text-sm sm:text-base font-semibold text-gray-800">Orders</h2>
+        <h2 className="text-sm sm:text-base font-semibold text-gray-800">
+          Orders
+        </h2>
         <p className="text-xs text-gray-700">Manage customer orders</p>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-1 sm:gap-2 items-stretch sm:items-center w-full sm:w-auto">
-        <IconField iconPosition="left" className="w-full sm:w-auto flex-1 sm:flex-none">
+        <IconField
+          iconPosition="left"
+          className="w-full sm:w-auto flex-1 sm:flex-none"
+        >
           <InputIcon className="pi pi-search" />
           <InputText
             value={searchInput}
@@ -223,7 +246,9 @@ function OrdersPage() {
 
         <select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as OrderStatus | "ALL")}
+          onChange={(e) =>
+            setStatusFilter(e.target.value as OrderStatus | "ALL")
+          }
           className="p-inputtext-sm border rounded-md px-2 py-1.5 bg-white"
         >
           <option value="ALL">All Status</option>
@@ -288,7 +313,9 @@ function OrdersPage() {
                           <h3 className="text-sm md:text-base font-semibold text-gray-800">
                             #{order.orderNumber}
                           </h3>
-                          <p className="text-xs text-gray-500">{formatDate(order.createdAt)}</p>
+                          <p className="text-xs text-gray-500">
+                            {formatDate(order.createdAt)}
+                          </p>
                         </div>
                         <span
                           className={`px-2 py-0.5 rounded-full text-xs font-semibold ${STATUS_STYLES[order.status]}`}
@@ -299,17 +326,20 @@ function OrdersPage() {
 
                       <div className="text-xs text-gray-700 space-y-0.5">
                         <p>
-                          <span className="font-medium">👤 Customer:</span> {order.userId?.name}
+                          <span className="font-medium">👤 Customer:</span>{" "}
+                          {order.userId?.name}
                         </p>
                         <p>
-                          <span className="font-medium">📞 Phone:</span> {order.userId?.phone}
+                          <span className="font-medium">📞 Phone:</span>{" "}
+                          {order.userId?.phone}
                         </p>
                         <p>
-                          <span className="font-medium">📦 Items:</span> {order.totalItems}
+                          <span className="font-medium">📦 Items:</span>{" "}
+                          {order.totalItems}
                         </p>
                         <p>
-                          <span className="font-medium">💳 Payment:</span> {order.paymentMethod} (
-                          {order.paymentStatus})
+                          <span className="font-medium">💳 Payment:</span>{" "}
+                          {order.paymentMethod} ({order.paymentStatus})
                         </p>
                       </div>
 
@@ -340,7 +370,11 @@ function OrdersPage() {
                             style={
                               s === "CANCELLED"
                                 ? undefined
-                                : { background: "#ffcf00", color: "#1d232f", border: "1px solid #e0ac1f" }
+                                : {
+                                    background: "#ffcf00",
+                                    color: "#1d232f",
+                                    border: "1px solid #e0ac1f",
+                                  }
                             }
                           />
                         ))}
@@ -354,20 +388,23 @@ function OrdersPage() {
             <div className="flex justify-between items-center mt-6 p-3 border-t border-gray-200">
               <p className="text-sm text-gray-600">
                 Showing {(pagination.page - 1) * pagination.rows + 1} to{" "}
-                {Math.min(pagination.page * pagination.rows, pagination.total)} of{" "}
-                {pagination.total} orders
+                {Math.min(pagination.page * pagination.rows, pagination.total)}{" "}
+                of {pagination.total} orders
               </p>
               <div className="flex gap-2">
                 <Button
                   icon="pi pi-chevron-left"
                   onClick={() =>
-                    setPagination((prev) => (prev.page > 1 ? { ...prev, page: prev.page - 1 } : prev))
+                    setPagination((prev) =>
+                      prev.page > 1 ? { ...prev, page: prev.page - 1 } : prev,
+                    )
                   }
                   disabled={pagination.page === 1}
                   text
                 />
                 <span className="px-3 py-2 bg-gray-100 rounded">
-                  {pagination.page} / {Math.max(1, Math.ceil(pagination.total / pagination.rows))}
+                  {pagination.page} /{" "}
+                  {Math.max(1, Math.ceil(pagination.total / pagination.rows))}
                 </span>
                 <Button
                   icon="pi pi-chevron-right"
@@ -379,7 +416,8 @@ function OrdersPage() {
                     )
                   }
                   disabled={
-                    pagination.page === Math.max(1, Math.ceil(pagination.total / pagination.rows))
+                    pagination.page ===
+                    Math.max(1, Math.ceil(pagination.total / pagination.rows))
                   }
                   text
                 />
@@ -416,11 +454,20 @@ function OrdersPage() {
             <Column header="Amount" body={amountTemplate} />
             <Column
               header="Payment"
-              body={(row: OrderRow) => `${row.paymentMethod} • ${row.paymentStatus}`}
+              body={(row: OrderRow) =>
+                `${row.paymentMethod} • ${row.paymentStatus}`
+              }
             />
             <Column header="Status" body={statusTemplate} />
-            <Column header="Placed On" body={(row: OrderRow) => formatDate(row.createdAt)} />
-            <Column header="Actions" body={actionTemplate} headerStyle={{ width: "140px" }} />
+            <Column
+              header="Placed On"
+              body={(row: OrderRow) => formatDate(row.createdAt)}
+            />
+            <Column
+              header="Actions"
+              body={actionTemplate}
+              headerStyle={{ width: "140px" }}
+            />
           </DataTable>
         )}
 
@@ -431,7 +478,9 @@ function OrdersPage() {
           style={{ width: "28rem" }}
           onHide={() => setCancelDialog({ visible: false, orderId: null })}
         >
-          <p className="text-sm text-gray-600 mb-2">Cancellation reason (optional):</p>
+          <p className="text-sm text-gray-600 mb-2">
+            Cancellation reason (optional):
+          </p>
           <InputTextarea
             value={cancelNote}
             onChange={(e) => setCancelNote(e.target.value)}
