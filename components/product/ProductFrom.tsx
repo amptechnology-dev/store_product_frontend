@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useForm, Controller, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -9,6 +9,7 @@ import { InputNumber } from "primereact/inputnumber";
 import { InputTextarea } from "primereact/inputtextarea";
 import { Dropdown } from "primereact/dropdown";
 import { Button } from "primereact/button";
+import { Dialog } from "primereact/dialog";
 import { toast } from "react-toastify";
 import axiosInstance from "@/service/axios.service";
 import { createProductSchema, updateProductSchema } from "@/helper/schema/Schema";
@@ -42,6 +43,8 @@ const emptyVariant = {
   stock: 0,
   sku: "",
 };
+
+type FacingMode = "user" | "environment";
 
 function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -88,30 +91,182 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
   const [categories, setCategories] = useState<any[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
 
+  // ---------------- WEBCAM STATE ----------------
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const cameraOpenRef = useRef(false); // dialog close hoye gele late-resolved stream leak atkate
+  const previewsRef = useRef<string[]>([]); // unmount e blob URL revoke korar jonno
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [cameraError, setCameraError] = useState("");
+  const [facingMode, setFacingMode] = useState<FacingMode>("environment");
+  const [hasMultipleCameras, setHasMultipleCameras] = useState(false);
+  const [capturedCount, setCapturedCount] = useState(0);
+
   const selectedStoreId = watch("storeId");
+
+  // ---------------- IMAGE HELPERS ----------------
+  const addImageFiles = (files: File[]) => {
+    if (!files.length) return;
+    setImageFiles((prev) => [...prev, ...files]);
+    setImagePreviews((prev) => [...prev, ...files.map((f) => URL.createObjectURL(f))]);
+  };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
-    const files = Array.from(e.target.files);
-    setImageFiles((prev) => [...prev, ...files]);
-    files.forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        setImagePreviews((p) => [...p, ev.target?.result as string]);
-      };
-      reader.readAsDataURL(file);
-    });
+    addImageFiles(Array.from(e.target.files));
+    e.target.value = ""; // same file abar select korte parbe
   };
 
   const removeImage = (index: number, isExisting = false) => {
     if (isExisting) {
       setExistingImages((prev) => prev.filter((_, i) => i !== index));
     } else {
+      const url = imagePreviews[index];
+      if (url) URL.revokeObjectURL(url);
       setImageFiles((prev) => prev.filter((_, i) => i !== index));
       setImagePreviews((prev) => prev.filter((_, i) => i !== index));
     }
   };
 
+  const clearNewImages = () => {
+    imagePreviews.forEach((u) => URL.revokeObjectURL(u));
+    setImageFiles([]);
+    setImagePreviews([]);
+  };
+
+  // ---------------- WEBCAM LOGIC ----------------
+  const stopCamera = useCallback(() => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
+    setCameraReady(false);
+  }, []);
+
+  const startCamera = useCallback(
+    async (mode: FacingMode) => {
+      stopCamera();
+      setCameraError("");
+
+      // getUserMedia sudhu HTTPS ba localhost e kaj kore
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setCameraError(
+          "Camera is not supported in this browser, or the page is not served over HTTPS."
+        );
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: mode },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        });
+
+        // permission dewar somoy user dialog bondho kore dile stream ta chere dao
+        if (!cameraOpenRef.current) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play().catch(() => {});
+        }
+
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          setHasMultipleCameras(devices.filter((d) => d.kind === "videoinput").length > 1);
+        } catch {
+          setHasMultipleCameras(false);
+        }
+      } catch (err: any) {
+        console.error("Camera error:", err);
+        switch (err?.name) {
+          case "NotAllowedError":
+          case "SecurityError":
+            setCameraError(
+              "Camera permission denied. Allow camera access in your browser settings and try again."
+            );
+            break;
+          case "NotFoundError":
+          case "OverconstrainedError":
+            setCameraError("No camera found on this device.");
+            break;
+          case "NotReadableError":
+            setCameraError("Camera is being used by another app. Close it and try again.");
+            break;
+          default:
+            setCameraError("Unable to access the camera.");
+        }
+      }
+    },
+    [stopCamera]
+  );
+
+  const openCamera = () => {
+    cameraOpenRef.current = true;
+    setCapturedCount(0);
+    setCameraError("");
+    setCameraOpen(true); // stream start hobe Dialog er onShow e
+  };
+
+  const closeCamera = () => {
+    cameraOpenRef.current = false;
+    stopCamera();
+    setCameraOpen(false);
+  };
+
+  const switchCamera = () => {
+    const next: FacingMode = facingMode === "environment" ? "user" : "environment";
+    setFacingMode(next);
+    startCamera(next);
+  };
+
+  const capturePhoto = () => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth) return;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          toast.error("Failed to capture photo");
+          return;
+        }
+        const file = new File([blob], `camera-${Date.now()}.jpg`, { type: "image/jpeg" });
+        addImageFiles([file]);
+        setCapturedCount((c) => c + 1);
+      },
+      "image/jpeg",
+      0.9
+    );
+  };
+
+  // preview URL gulo ref e sync rakho, unmount e cleanup korar jonno
+  useEffect(() => {
+    previewsRef.current = imagePreviews;
+  }, [imagePreviews]);
+
+  useEffect(() => {
+    return () => {
+      cameraOpenRef.current = false;
+      stopCamera();
+      previewsRef.current.forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, [stopCamera]);
+
+  // ---------------- DATA FETCHING ----------------
   useEffect(() => {
     fetchStores();
     if (productId) {
@@ -208,6 +363,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
     }
   };
 
+  // ---------------- SUBMIT ----------------
   const onSubmit = async (data: ProductFormData) => {
     setIsSubmitting(true);
     try {
@@ -247,8 +403,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
 
       toast.success(res.data.message || `Product ${isEditMode ? "updated" : "created"} successfully!`);
       reset();
-      setImageFiles([]);
-      setImagePreviews([]);
+      clearNewImages();
       setExistingImages([]);
       onSuccess();
     } catch (error: any) {
@@ -601,7 +756,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
           {imagePreviews.length > 0 && (
             <div className="flex gap-2 flex-wrap">
               {imagePreviews.map((src, idx) => (
-                <div key={idx} className="relative w-40 h-28 rounded overflow-hidden border">
+                <div key={src} className="relative w-40 h-28 rounded overflow-hidden border">
                   <img src={src} alt={`preview-${idx}`} className="w-full h-full object-cover" />
                   <button
                     type="button"
@@ -615,13 +770,23 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
             </div>
           )}
 
-          <input
-            type="file"
-            multiple
-            onChange={handleImageChange}
-            className="w-full p-2 border border-yellow-300 rounded-lg"
-            accept="image/*"
-          />
+          <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+            <input
+              type="file"
+              multiple
+              onChange={handleImageChange}
+              className="flex-1 min-w-0 p-2 border border-yellow-300 rounded-lg"
+              accept="image/*"
+            />
+            <Button
+              type="button"
+              label="Take Photo"
+              icon="pi pi-camera"
+              onClick={openCamera}
+              outlined
+              className="shrink-0"
+            />
+          </div>
         </div>
 
         {/* SUBMIT BUTTONS */}
@@ -644,6 +809,89 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
           />
         </div>
       </form>
+
+      {/* CAMERA DIALOG */}
+      <Dialog
+        header="Take Product Photo"
+        visible={cameraOpen}
+        onShow={() => startCamera(facingMode)}
+        onHide={closeCamera}
+        style={{ width: "min(92vw, 640px)" }}
+        modal
+        draggable={false}
+      >
+        <div className="space-y-3">
+          {cameraError && (
+            <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-lg p-3 flex flex-col gap-2">
+              <span className="flex items-start gap-2">
+                <i className="pi pi-exclamation-circle mt-0.5"></i>
+                {cameraError}
+              </span>
+              <Button
+                type="button"
+                label="Try again"
+                icon="pi pi-refresh"
+                size="small"
+                outlined
+                className="self-start"
+                onClick={() => startCamera(facingMode)}
+              />
+            </div>
+          )}
+
+          <div className={`relative bg-black rounded-lg overflow-hidden ${cameraError ? "hidden" : ""}`}>
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              onLoadedMetadata={() => setCameraReady(true)}
+              className="w-full"
+              style={{ maxHeight: "60vh", objectFit: "contain" }}
+            />
+            {!cameraReady && !cameraError && (
+              <div className="absolute inset-0 flex items-center justify-center text-white">
+                <i className="pi pi-spin pi-spinner text-2xl"></i>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <span className="text-xs text-gray-600">
+              {capturedCount > 0
+                ? `${capturedCount} photo${capturedCount > 1 ? "s" : ""} added`
+                : "Capture as many photos as you need"}
+            </span>
+
+            <div className="flex gap-2">
+              {hasMultipleCameras && (
+                <Button
+                  type="button"
+                  icon="pi pi-sync"
+                  label="Switch"
+                  outlined
+                  onClick={switchCamera}
+                  disabled={!cameraReady}
+                />
+              )}
+              <Button
+                type="button"
+                icon="pi pi-camera"
+                label="Capture"
+                onClick={capturePhoto}
+                disabled={!cameraReady}
+              />
+              <Button
+                type="button"
+                icon="pi pi-check"
+                label="Done"
+                severity="success"
+                onClick={closeCamera}
+              />
+            </div>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }
