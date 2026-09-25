@@ -8,6 +8,7 @@ import type { MenuItem } from "primereact/menuitem";
 import axiosInstance from "@/service/axios.service";
 import { toast } from "react-toastify";
 import NotificationBell from "@/components/NotificationBell";
+import { useRouter } from "next/navigation";
 
 interface NavbarProps {
   role: "ADMIN" | "MANAGER" | "CASHIER" | "STORE";
@@ -29,6 +30,7 @@ const Navbar: React.FC<NavbarProps> = ({ user, role }) => {
   const [collapsed, setCollapsed] = useState<boolean>(false);
   const [isMobile, setIsMobile] = useState<boolean>(false);
   const menuRef = React.useRef<Menu>(null);
+  const router = useRouter();
 
   useEffect(() => {
     try {
@@ -190,6 +192,19 @@ const Navbar: React.FC<NavbarProps> = ({ user, role }) => {
               background: "var(--border)",
               margin: "0 8px",
             }}
+          />
+        )}
+        {role === "STORE" && (
+          <Button
+            icon="pi pi-cog"
+            rounded
+            text
+            severity="secondary"
+            onClick={() => router.push("/dashboard/store-settings")}
+            className="nav-icon-btn"
+            style={{ color: "var(--brand-primary)" }}
+            tooltip="Store Settings"
+            tooltipOptions={{ position: "bottom" }}
           />
         )}
         <NotificationBell enabled={role === "STORE"} />

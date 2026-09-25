@@ -54,6 +54,12 @@ type ProductRow = {
     _id?: string;
     name?: string;
   };
+  mrp?: number;
+  offerPrice?: number;
+  stock?: number;
+  hasVariants?: boolean;
+  hasColor?: boolean;
+  hasStockManagement?: boolean;
 };
 
 const getInitials = (name?: string) => {
@@ -91,17 +97,24 @@ const getVariants = (product: ProductRow): ProductVariant[] =>
 
 const getPriceRangeLabel = (product: ProductRow) => {
   const variants = getVariants(product);
-  if (variants.length === 0) return "-";
-
-  const offerPrices = variants.map((v) => Number(v.offerPrice || 0));
-  const min = Math.min(...offerPrices);
-  const max = Math.max(...offerPrices);
-
-  return min === max ? `₹${min.toFixed(2)}` : `₹${min.toFixed(2)} - ₹${max.toFixed(2)}`;
+  if (variants.length > 0) {
+    const offerPrices = variants.map((v) => Number(v.offerPrice || 0));
+    const min = Math.min(...offerPrices);
+    const max = Math.max(...offerPrices);
+    return min === max
+      ? `₹${min.toFixed(2)}`
+      : `₹${min.toFixed(2)} - ₹${max.toFixed(2)}`;
+  }
+  if (product.offerPrice !== undefined && product.offerPrice !== null) {
+    return `₹${Number(product.offerPrice).toFixed(2)}`;
+  }
+  return "-";
 };
 
-const getVariantLabel = (v: ProductVariant) => {
-  const parts = [v.size, v.weight].filter(Boolean);
+const getVariantLabel = (
+  v: ProductVariant & { color?: string; height?: string },
+) => {
+  const parts = [v.color, v.size, v.weight, v.height].filter(Boolean);
   return parts.length ? parts.join(" / ") : "-";
 };
 
@@ -125,7 +138,9 @@ function Page() {
   const [loading, setLoading] = useState(false);
   const [productData, setProductData] = useState<ProductRow[]>([]);
   const [visible, setVisible] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState<ProductRow | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<ProductRow | null>(
+    null,
+  );
   const [editProductId, setEditProductId] = useState<string | null>(null);
 
   const [pagination, setPagination] = useState({
@@ -439,7 +454,15 @@ function Page() {
                             {product.unit || "-"}
                           </p>
 
-                          {/* Variant-wise size/weight + price list */}
+                          {variants.length === 0 &&
+                            product.stock !== undefined &&
+                            product.hasStockManagement && (
+                              <p>
+                                <span className="font-medium">📦 Stock:</span>{" "}
+                                {product.stock}
+                              </p>
+                            )}
+
                           {variants.length > 0 && (
                             <div className="pt-1">
                               <span className="font-medium">📐 Variants:</span>
@@ -596,9 +619,10 @@ function Page() {
                   <div className="flex flex-col gap-0.5">
                     {variants.map((v, idx) => (
                       <span key={v._id || idx} className="text-xs">
-                        <span className="font-medium">{getVariantLabel(v)}</span>
-                        {" — "}
-                        ₹{Number(v.offerPrice || 0).toFixed(2)}{" "}
+                        <span className="font-medium">
+                          {getVariantLabel(v)}
+                        </span>
+                        {" — "}₹{Number(v.offerPrice || 0).toFixed(2)}{" "}
                         <span className="line-through text-gray-400">
                           ₹{Number(v.mrp || 0).toFixed(2)}
                         </span>
