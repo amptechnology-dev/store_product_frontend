@@ -194,7 +194,7 @@ const Navbar: React.FC<NavbarProps> = ({ user, role }) => {
             }}
           />
         )}
-        {role === "STORE" && (
+        {/* {role === "STORE" && (
           <Button
             icon="pi pi-cog"
             rounded
@@ -206,7 +206,7 @@ const Navbar: React.FC<NavbarProps> = ({ user, role }) => {
             tooltip="Store Settings"
             tooltipOptions={{ position: "bottom" }}
           />
-        )}
+        )} */}
         <NotificationBell enabled={role === "STORE"} />
         <div>
           <Menu

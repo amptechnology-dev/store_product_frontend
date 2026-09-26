@@ -61,7 +61,7 @@ function StoreSettingsPage() {
     try {
       setSaving(true);
       await updateStoreSettings(storeId, { [key]: value });
-      toast.success("Settings updated");
+      toast.success("Settings updated successfully");
     } catch (err: any) {
       setSettings(prev); // revert on failure
       if (axios.isAxiosError(err)) {
@@ -78,89 +78,103 @@ function StoreSettingsPage() {
     {
       key: "hasVariants",
       title: "Size / Weight / Height Variants",
-      desc: "On thakle product-e multiple size, weight ba height wise price add korte parbe.",
+      desc: "Enable this to add multiple size, weight, or height based pricing for a product.",
       icon: "pi pi-sliders-h",
     },
     {
       key: "hasColor",
       title: "Color Variants",
-      desc: "On thakle color-wise variant o sei color er image add korte parbe.",
+      desc: "Enable this to add color-wise variants along with color-specific images.",
       icon: "pi pi-palette",
     },
     {
       key: "hasStockManagement",
       title: "Stock Management",
-      desc: "On thakle product/variant e stock quantity manage korte parbe.",
+      desc: "Enable this to manage stock quantity for each product or variant.",
       icon: "pi pi-box",
     },
   ];
 
   return (
-    <div className="w-full flex justify-start items-start pt-2">
-      <div className="w-full bg-white rounded-lg shadow p-4 sm:p-6 max-w-2xl">
-        <div
-          className="flex items-center gap-3 mb-5 p-3 rounded-lg"
-          style={{ background: "linear-gradient(120deg,#f3be27,#e4a90e)" }}
-        >
-          <i className="pi pi-cog text-xl text-gray-800"></i>
-          <div>
-            <h2 className="text-base font-semibold text-gray-800">Store Settings</h2>
-            <p className="text-xs text-gray-700">Product variant, color o stock behavior control koro</p>
+    <div className="w-full h-screen bg-gray-50 flex justify-center px-4 py-4 overflow-hidden">
+      <div className="w-full max-w-5xl">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          {/* Header */}
+          <div
+            className="flex items-center gap-4 px-6 py-4 sm:px-8 sm:py-5"
+            style={{ background: "linear-gradient(120deg,#f3be27,#e4a90e)" }}
+          >
+            <div className="w-10 h-10 rounded-xl bg-white/25 flex items-center justify-center flex-shrink-0">
+              <i className="pi pi-cog text-xl text-gray-900"></i>
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Store Settings</h2>
+              <p className="text-xs text-gray-800/80 mt-0.5">
+                Control product variant, color, and stock behavior
+              </p>
+            </div>
           </div>
-        </div>
 
-        {stores.length > 1 && (
-          <div className="mb-4 space-y-1">
-            <label className="text-sm font-semibold text-gray-700">Store</label>
-            <Dropdown
-              value={storeId}
-              options={stores.map((s) => ({ label: s.storeName, value: s._id }))}
-              optionLabel="label"
-              optionValue="value"
-              onChange={(e) => setStoreId(e.value)}
-              className="w-full"
-            />
-          </div>
-        )}
-
-        {loading ? (
-          <div className="flex justify-center items-center p-8">
-            <i className="pi pi-spin pi-spinner text-2xl text-blue-500"></i>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {settingRows.map((row) => (
-              <div
-                key={row.key}
-                className="flex items-center justify-between gap-3 border border-gray-200 rounded-lg p-3"
-              >
-                <div className="flex items-start gap-3">
-                  <i className={`${row.icon} text-indigo-600 text-lg mt-0.5`}></i>
-                  <div>
-                    <p className="text-sm font-semibold text-gray-800">{row.title}</p>
-                    <p className="text-xs text-gray-500">{row.desc}</p>
-                  </div>
-                </div>
-                <InputSwitch
-                  checked={!!settings[row.key]}
-                  onChange={(e) => handleToggle(row.key, e.value)}
-                  disabled={saving || !storeId}
+          <div className="p-5 sm:p-6">
+            {stores.length > 1 && (
+              <div className="mb-4 space-y-1.5">
+                <label className="text-sm font-semibold text-gray-700">Select Store</label>
+                <Dropdown
+                  value={storeId}
+                  options={stores.map((s) => ({ label: s.storeName, value: s._id }))}
+                  optionLabel="label"
+                  optionValue="value"
+                  onChange={(e) => setStoreId(e.value)}
+                  className="w-full"
                 />
               </div>
-            ))}
+            )}
+
+            {loading ? (
+              <div className="flex flex-col justify-center items-center py-10 gap-3">
+                <i className="pi pi-spin pi-spinner text-3xl text-amber-500"></i>
+                <p className="text-sm text-gray-400">Loading settings...</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {settingRows.map((row) => (
+                  <div
+                    key={row.key}
+                    className="flex items-center justify-between gap-4 border border-gray-200 rounded-xl p-3 hover:border-gray-300 hover:shadow-sm transition-all"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0">
+                        <i className={`${row.icon} text-indigo-600 text-base`}></i>
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-800">{row.title}</p>
+                        <p className="text-xs text-gray-500 mt-0.5 leading-relaxed max-w-xl">
+                          {row.desc}
+                        </p>
+                      </div>
+                    </div>
+                    <InputSwitch
+                      checked={!!settings[row.key]}
+                      onChange={(e) => handleToggle(row.key, e.value)}
+                      disabled={saving || !storeId}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 flex gap-3">
+              <i className="pi pi-info-circle mt-0.5 flex-shrink-0"></i>
+              <span className="leading-relaxed">
+                A snapshot of these settings is saved when a new product is created — changing
+                them later will not affect products that were already created.
+              </span>
+            </div>
           </div>
-        )}
-
-        <div className="mt-5 bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 flex gap-2">
-          <i className="pi pi-info-circle mt-0.5"></i>
-          <span>
-            Notun product create korar shomoy ei setting-er snapshot save hobe, tai age create kora
-            product-er behavior change korle affect hobe na.
-          </span>
         </div>
-
-        <ToastContainer position="top-right" />
       </div>
+
+      <ToastContainer position="top-right" />
     </div>
   );
 }

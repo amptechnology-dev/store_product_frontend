@@ -43,49 +43,69 @@ export const updateUserSchema = zod.object({
 });
 
 // ===============================
-// PRODUCT VARIANT SCHEMA
+// PACKAGING DETAILS SCHEMA (product-e o thake, proti variant/size-e o thake)
 // ===============================
-// NOTE: size/weight/height/color shob optional rakha hoyeche schema level e,
-// karon eta store settings (hasVariants / hasColor) er upor depend kore.
-// Actual "required" validation frontend e validateBySettings() function
-// aar backend e store settings check kore hoy — tai ekhane strict .refine()
-// rakha hoy nai, noile hasColor-only store e size/weight na thakle bhul kore
-// validation fail korto.
-const variantSchema = zod
+export const packagingDetailsSchema = zod
   .object({
-    color: zod.string().trim().optional(),
-    size: zod.string().trim().optional(),
-    weight: zod.string().trim().optional(),
-    height: zod.string().trim().optional(),
-    mrp: zod.coerce
-      .number({ error: "MRP is required" })
-      .nonnegative("MRP must be >= 0"),
-    offerPrice: zod.coerce
-      .number({ error: "Offer price is required" })
-      .nonnegative("Offer price must be >= 0"),
-    stock: zod.coerce
-      .number()
-      .nonnegative("Stock must be >= 0")
-      .optional()
-      .default(0),
-    sku: zod.string().trim().optional(),
+    expectedDeliveryDays: zod.coerce.number().min(0).optional(),
+    length: zod.coerce.number().min(0).optional(),
+    breadth: zod.coerce.number().min(0).optional(),
+    height: zod.coerce.number().min(0).optional(),
+    weight: zod.coerce.number().min(0).optional(),
   })
-  .refine((v) => v.offerPrice <= v.mrp, {
-    message: "Offer price cannot be greater than MRP",
-    path: ["offerPrice"],
-  });
+  .optional();
+
+// ===============================
+// SIZE/WEIGHT/HEIGHT VARIANT (color-er nested hisebe, ba direct flat variant hisebe)
+// ===============================
+// NOTE: kono store-setting er upor r depend kore na. Ei product-e "color" key
+// pathano hocche ki na, r protyek color-e "sizeVariants" ache ki na - eituku
+// dekhei structure decide hoy. Tai schema level e loose rekhe real validation
+// component-er nijer validateVariants() function-e kora hoy.
+export const sizeVariantSchema = zod.object({
+  _id: zod.string().optional(),
+  size: zod.string().trim().optional(),
+  weight: zod.string().trim().optional(),
+  height: zod.string().trim().optional(),
+  mrp: zod.coerce.number().nonnegative().optional(),
+  offerPrice: zod.coerce.number().nonnegative().optional(),
+  openingStock: zod.coerce.number().nonnegative().optional().default(0),
+  currentStock: zod.coerce.number().nonnegative().optional(),
+  sku: zod.string().trim().optional(),
+  packagingDetails: packagingDetailsSchema,
+});
+
+// ===============================
+// COLOR VARIANT (nijer sizeVariants thakte pare, na thakle direct pricing)
+// ===============================
+export const colorVariantSchema = zod.object({
+  _id: zod.string().optional(),
+  color: zod.string().trim().optional(),
+  images: zod.array(zod.string()).optional(),
+  mrp: zod.coerce.number().nonnegative().optional(),
+  offerPrice: zod.coerce.number().nonnegative().optional(),
+  openingStock: zod.coerce.number().nonnegative().optional().default(0),
+  currentStock: zod.coerce.number().nonnegative().optional(),
+  sku: zod.string().trim().optional(),
+  packagingDetails: packagingDetailsSchema,
+  sizeVariants: zod.array(sizeVariantSchema).optional(),
+});
 
 export const createProductSchema = zod.object({
   name: zod.string().trim().min(1, "Product name is required"),
   description: zod.string().trim().min(1, "Product description is required"),
   unit: zod.string().trim().min(1, "Unit is required"),
-  deliveryTime: zod.string().trim().optional(),
   storeId: zod.string().min(1, "Store is required"),
   categoryId: zod.string().min(1, "Category is required"),
+
+  // Simple (no-variant) product fields
   mrp: zod.coerce.number().min(0).optional(),
   offerPrice: zod.coerce.number().min(0).optional(),
-  stock: zod.coerce.number().min(0).optional(),
-  variants: zod.array(variantSchema).optional(),
+  openingStock: zod.coerce.number().min(0).optional(),
+  packagingDetails: packagingDetailsSchema,
+
+  // Loose union - real per-row validation component-e manually hoy
+  variants: zod.array(zod.union([colorVariantSchema, sizeVariantSchema])).optional(),
 });
 
 export const updateProductSchema = createProductSchema.partial();
@@ -175,7 +195,7 @@ export const createNozzleSchema = zod.object({
 export const updateNozzleSchema = createNozzleSchema.partial();
 
 // ===============================
-// PURCHASE SCHEMA (frontend copy of backend purchase.schema.js)
+// PURCHASE SCHEMA
 // ===============================
 
 export const purchaseItemSchema = zod.object({

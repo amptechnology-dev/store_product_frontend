@@ -212,7 +212,7 @@ function OrdersPage() {
           model={items}
           loading={updatingId === rowData._id}
           disabled={items.length === 0 && false} // View always enabled
-          className="text-xs [&_.p-splitbutton-defaultbutton]:!bg-[#ffcf00] [&_.p-splitbutton-defaultbutton]:!text-[#1d232f] [&_.p-splitbutton-defaultbutton]:!border-[#e0ac1f]"
+          className="text-xs [&_.p-splitbutton-defaultbutton]:!bg-[#3b82f6] [&_.p-splitbutton-defaultbutton]:!text-white [&_.p-splitbutton-defaultbutton]:!border-[#2563eb]"
         />
       </div>
     );
@@ -221,13 +221,13 @@ function OrdersPage() {
   const header = (
     <div
       className="flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-center p-2 sm:p-3 rounded-lg"
-      style={{ background: "linear-gradient(120deg,#f3be27,#e4a90e)" }}
+      style={{ background: "linear-gradient(120deg,#3b82f6,#1d4ed8)" }}
     >
       <div className="min-w-0">
-        <h2 className="text-sm sm:text-base font-semibold text-gray-800">
+        <h2 className="text-sm sm:text-base font-semibold text-white">
           Orders
         </h2>
-        <p className="text-xs text-gray-700">Manage customer orders</p>
+        <p className="text-xs text-blue-100">Manage customer orders</p>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-1 sm:gap-2 items-stretch sm:items-center w-full sm:w-auto">
@@ -259,7 +259,7 @@ function OrdersPage() {
           <option value="CANCELLED">Cancelled</option>
         </select>
 
-        <div className="flex gap-0.5 bg-white/30 rounded-lg p-1 w-full sm:w-auto justify-between sm:justify-start">
+        <div className="flex gap-0.5 bg-white/20 rounded-lg p-1 w-full sm:w-auto justify-between sm:justify-start">
           <Button
             icon="pi pi-bars"
             onClick={() => setViewMode("table")}
@@ -267,8 +267,8 @@ function OrdersPage() {
               minWidth: "36px",
               padding: "6px",
               background: viewMode === "table" ? "#fff" : "transparent",
-              color: viewMode === "table" ? "#d89f00" : "#1d232f",
-              border: "1px solid #e0ac1f",
+              color: viewMode === "table" ? "#1d4ed8" : "#fff",
+              border: "1px solid #93c5fd",
             }}
           />
           <Button
@@ -278,8 +278,8 @@ function OrdersPage() {
               minWidth: "36px",
               padding: "6px",
               background: viewMode === "card" ? "#fff" : "transparent",
-              color: viewMode === "card" ? "#d89f00" : "#1d232f",
-              border: "1px solid #e0ac1f",
+              color: viewMode === "card" ? "#1d4ed8" : "#fff",
+              border: "1px solid #93c5fd",
             }}
           />
         </div>
@@ -295,18 +295,18 @@ function OrdersPage() {
         {orderData.length === 0 && !loading && <EmptyState />}
 
         {viewMode === "card" && orderData.length > 0 && (
-          <div className="p-2 sm:p-3">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="p-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
               {orderData.map((order) => {
                 const nextStatuses = getNextStatuses(order.status);
                 return (
                   <div
                     key={order._id}
-                    className="bg-white rounded-xl shadow-md hover:shadow-lg transition-shadow overflow-hidden border border-gray-200 flex flex-col"
+                    className="bg-white rounded-xl shadow-md hover:shadow-lg transition-shadow overflow-hidden border border-blue-100 flex flex-col"
                   >
                     <div
                       onClick={() => goToDetails(order._id)}
-                      className="cursor-pointer p-3 sm:p-4 flex flex-col gap-2"
+                      className="cursor-pointer p-2.5 sm:p-3 flex flex-col gap-1.5"
                     >
                       <div className="flex justify-between items-start">
                         <div>
@@ -343,8 +343,8 @@ function OrdersPage() {
                         </p>
                       </div>
 
-                      <div className="flex justify-between items-center pt-2 border-t border-gray-100 mt-1">
-                        <span className="text-sm font-semibold text-green-700">
+                      <div className="flex justify-between items-center pt-1.5 border-t border-blue-100 mt-0.5">
+                        <span className="text-sm font-semibold text-blue-700">
                           ₹{Number(order.totalAmount).toFixed(2)}
                         </span>
                         <span className="text-xs text-gray-400 line-through">
@@ -355,7 +355,7 @@ function OrdersPage() {
 
                     {nextStatuses.length > 0 && (
                       <div
-                        className="flex gap-1 px-3 pb-3 flex-wrap"
+                        className="flex gap-1 px-2.5 pb-2.5 flex-wrap"
                         onClick={(e) => e.stopPropagation()}
                       >
                         {nextStatuses.map((s) => (
@@ -371,9 +371,9 @@ function OrdersPage() {
                               s === "CANCELLED"
                                 ? undefined
                                 : {
-                                    background: "#ffcf00",
-                                    color: "#1d232f",
-                                    border: "1px solid #e0ac1f",
+                                    background: "#eff6ff",
+                                    color: "#1d4ed8",
+                                    border: "1px solid #bfdbfe",
                                   }
                             }
                           />
@@ -385,7 +385,7 @@ function OrdersPage() {
               })}
             </div>
 
-            <div className="flex justify-between items-center mt-6 p-3 border-t border-gray-200">
+            <div className="flex justify-between items-center mt-4 p-2.5 border-t border-blue-100">
               <p className="text-sm text-gray-600">
                 Showing {(pagination.page - 1) * pagination.rows + 1} to{" "}
                 {Math.min(pagination.page * pagination.rows, pagination.total)}{" "}
@@ -402,7 +402,7 @@ function OrdersPage() {
                   disabled={pagination.page === 1}
                   text
                 />
-                <span className="px-3 py-2 bg-gray-100 rounded">
+                <span className="px-3 py-2 bg-blue-50 text-blue-700 rounded">
                   {pagination.page} /{" "}
                   {Math.max(1, Math.ceil(pagination.total / pagination.rows))}
                 </span>
