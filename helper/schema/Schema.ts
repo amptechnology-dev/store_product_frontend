@@ -58,10 +58,6 @@ export const packagingDetailsSchema = zod
 // ===============================
 // SIZE/WEIGHT/HEIGHT VARIANT (color-er nested hisebe, ba direct flat variant hisebe)
 // ===============================
-// NOTE: kono store-setting er upor r depend kore na. Ei product-e "color" key
-// pathano hocche ki na, r protyek color-e "sizeVariants" ache ki na - eituku
-// dekhei structure decide hoy. Tai schema level e loose rekhe real validation
-// component-er nijer validateVariants() function-e kora hoy.
 export const sizeVariantSchema = zod.object({
   _id: zod.string().optional(),
   size: zod.string().trim().optional(),
@@ -71,6 +67,7 @@ export const sizeVariantSchema = zod.object({
   offerPrice: zod.coerce.number().nonnegative().optional(),
   openingStock: zod.coerce.number().nonnegative().optional().default(0),
   currentStock: zod.coerce.number().nonnegative().optional(),
+  lowStockThreshold: zod.coerce.number().nonnegative().optional().default(0), // <-- ADDED
   sku: zod.string().trim().optional(),
   packagingDetails: packagingDetailsSchema,
 });
@@ -86,6 +83,7 @@ export const colorVariantSchema = zod.object({
   offerPrice: zod.coerce.number().nonnegative().optional(),
   openingStock: zod.coerce.number().nonnegative().optional().default(0),
   currentStock: zod.coerce.number().nonnegative().optional(),
+  lowStockThreshold: zod.coerce.number().nonnegative().optional().default(0), // <-- ADDED
   sku: zod.string().trim().optional(),
   packagingDetails: packagingDetailsSchema,
   sizeVariants: zod.array(sizeVariantSchema).optional(),
@@ -102,6 +100,7 @@ export const createProductSchema = zod.object({
   mrp: zod.coerce.number().min(0).optional(),
   offerPrice: zod.coerce.number().min(0).optional(),
   openingStock: zod.coerce.number().min(0).optional(),
+  lowStockThreshold: zod.coerce.number().min(0).optional(), // <-- ADDED
   packagingDetails: packagingDetailsSchema,
 
   // Loose union - real per-row validation component-e manually hoy

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import axiosInstance from "@/service/axios.service";
 import { ToastContainer, toast } from "react-toastify";
@@ -83,6 +83,110 @@ type ProductRow = {
   hasVariants?: boolean;
   hasColor?: boolean;
 };
+
+// ---------- Media helpers (image / gif / video) ----------
+const VIDEO_URL_REGEX = /\.(mp4|webm|mov)(\?.*)?$/i;
+const isVideoUrl = (url?: string | null) => !!url && VIDEO_URL_REGEX.test(url);
+
+/**
+ * Listing er jonno halka media preview.
+ *  - image/gif  -> lazy-loaded <img>
+ *  - video      -> muted <video>, preload="metadata" (full download hoy na, sudhu first frame)
+ *      autoPlay=true  : screen e dekha gele play, screen er baire gele pause (IntersectionObserver)
+ *      autoPlay=false : hover korle play, mouse soriye nile pause + first frame e ferot
+ */
+function MediaPreview({
+  src,
+  alt = "",
+  wrapperClassName = "",
+  autoPlay = true,
+  showBadge = true,
+}: {
+  src: string;
+  alt?: string;
+  wrapperClassName?: string;
+  autoPlay?: boolean;
+  showBadge?: boolean;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const isVideo = isVideoUrl(src);
+
+  useEffect(() => {
+    if (!isVideo || !autoPlay) return;
+    const el = videoRef.current;
+    if (!el) return;
+
+    // user er device e "reduce motion" on thakle auto play korbo na
+    const reduceMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduceMotion) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          el.play().catch(() => {});
+        } else {
+          el.pause();
+        }
+      },
+      { threshold: 0.4 },
+    );
+    observer.observe(el);
+
+    return () => {
+      observer.disconnect();
+      el.pause();
+    };
+  }, [isVideo, autoPlay, src]);
+
+  if (!isVideo) {
+    return (
+      <div className={`relative overflow-hidden ${wrapperClassName}`}>
+        <img
+          src={src}
+          alt={alt}
+          loading="lazy"
+          decoding="async"
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className={`relative overflow-hidden ${wrapperClassName}`}>
+      {/* #t=0.1 : play hobar age first frame poster hishebe dekhay (iOS Safari e o) */}
+      <video
+        ref={videoRef}
+        src={`${src}#t=0.1`}
+        muted
+        loop
+        playsInline
+        preload="metadata"
+        disablePictureInPicture
+        onMouseEnter={
+          autoPlay ? undefined : (e) => e.currentTarget.play().catch(() => {})
+        }
+        onMouseLeave={
+          autoPlay
+            ? undefined
+            : (e) => {
+                e.currentTarget.pause();
+                e.currentTarget.currentTime = 0.1;
+              }
+        }
+        className="absolute inset-0 h-full w-full object-cover"
+      />
+      {showBadge && (
+        <span className="absolute bottom-1 left-1 bg-black/60 text-white rounded px-1.5 py-0.5 text-[10px] flex items-center gap-1 pointer-events-none">
+          <i className="pi pi-video text-[9px]"></i>
+          Video
+        </span>
+      )}
+    </div>
+  );
+}
 
 const getInitials = (name?: string) => {
   if (!name) return "?";
@@ -290,16 +394,16 @@ function Page() {
 
   const productList = productData;
 
+  // Card view: image/gif hole <img>, video hole auto-play (viewport e thakle) muted loop video
   const productCardImage = (rowData: ProductRow) => {
     if (rowData.images && rowData.images.length > 0) {
       return (
-        <div className="w-full h-28 sm:h-32 md:h-36 lg:h-40 relative rounded-t-lg overflow-hidden bg-gray-100">
-          <img
-            src={rowData.images[0]}
-            alt="Product"
-            className="absolute inset-0 h-full w-full object-cover"
-          />
-        </div>
+        <MediaPreview
+          src={rowData.images[0]}
+          alt="Product"
+          autoPlay
+          wrapperClassName="w-full h-28 sm:h-32 md:h-36 lg:h-40 rounded-t-lg bg-gray-100"
+        />
       );
     }
     const initials = getInitials(rowData?.name || "");
@@ -313,16 +417,17 @@ function Page() {
     );
   };
 
+  // Table view: chhoto thumbnail, video hover korle play hoy
   const productImageTableTemplate = (rowData: ProductRow) => {
     if (rowData.images && rowData.images.length > 0) {
       return (
-        <div className="h-12 w-12 rounded-lg overflow-hidden border border-gray-200 bg-gray-100">
-          <img
-            src={rowData.images[0]}
-            alt="Product"
-            className="h-full w-full object-cover"
-          />
-        </div>
+        <MediaPreview
+          src={rowData.images[0]}
+          alt="Product"
+          autoPlay={false}
+          showBadge={false}
+          wrapperClassName="h-12 w-12 rounded-lg border border-gray-200 bg-gray-100"
+        />
       );
     }
     const initials = getInitials(rowData?.name || "");
@@ -415,10 +520,11 @@ function Page() {
                       {v.color || "Color"}
                     </span>
                     {v.images?.[0] && (
-                      <img
+                      <MediaPreview
                         src={v.images[0]}
-                        alt=""
-                        className="w-4 h-4 rounded object-cover ml-auto border"
+                        autoPlay={false}
+                        showBadge={false}
+                        wrapperClassName="w-4 h-4 rounded ml-auto border shrink-0"
                       />
                     )}
                   </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import axiosInstance from "@/service/axios.service";
@@ -16,6 +16,7 @@ import { Dialog } from "primereact/dialog";
 import { InputTextarea } from "primereact/inputtextarea";
 import { ConfirmDialog, confirmDialog } from "primereact/confirmdialog";
 import { formatDate } from "@/helper/DateTime";
+import { getCustomer } from "@/helper/order";
 import {
   OrderRow,
   OrderStatus,
@@ -33,10 +34,25 @@ const EmptyState = () => (
     <div className="text-6xl mb-4">🧾</div>
     <h2 className="text-xl font-semibold text-gray-700">No Orders Yet</h2>
     <p className="text-gray-500 mt-2 max-w-md">
-      Customer order placed korle seta ekhane show korbe.
+      Orders placed by customers will show up here.
     </p>
   </div>
 );
+
+const Spinner = () => (
+  <div className="flex justify-center items-center py-16">
+    <i className="pi pi-spin pi-spinner text-3xl text-gray-400" />
+  </div>
+);
+
+// status response e userId string ashle purono populated customer rekhe dao
+const mergeOrder = (prev: OrderRow, incoming: any): OrderRow => {
+  const merged = { ...prev, ...incoming };
+  if (!incoming?.userId || typeof incoming.userId !== "object") {
+    merged.userId = prev.userId;
+  }
+  return merged;
+};
 
 function OrdersPage() {
   const router = useRouter();
@@ -52,32 +68,23 @@ function OrdersPage() {
   const [debouncedSearch, setDebouncedSearch] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "ALL">("ALL");
 
-  // cancel-reason dialog state (CANCELLED status er jonno note lagbe)
+  // cancel-reason dialog state
   const [cancelDialog, setCancelDialog] = useState<{
     visible: boolean;
     orderId: string | null;
   }>({ visible: false, orderId: null });
   const [cancelNote, setCancelNote] = useState("");
 
+  // stale response guard
+  const requestIdRef = useRef(0);
+
   useEffect(() => {
     markAllRead();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    getOrders();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pagination.page, pagination.rows, debouncedSearch, statusFilter]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(searchInput.trim()), 500);
-    return () => clearTimeout(timer);
-  }, [searchInput]);
-
-  useEffect(() => {
-    setPagination((prev) => ({ ...prev, page: 1 }));
-  }, [debouncedSearch, statusFilter]);
-
-  const getOrders = async () => {
+  const getOrders = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     try {
       setLoading(true);
       const res = await axiosInstance.get(ENDPOINT, {
@@ -89,21 +96,47 @@ function OrdersPage() {
         },
       });
 
+      if (requestId !== requestIdRef.current) return; // purono response ignore
+
       const orders = res.data.orders || [];
       setOrderData(orders);
       setPagination((prev) => ({
         ...prev,
-        total: res.data.totalOrders || orders.length || 0,
+        total: res.data.totalOrders ?? orders.length ?? 0,
       }));
     } catch (error: any) {
+      if (requestId !== requestIdRef.current) return;
       if (axios.isAxiosError(error)) {
         toast.error(error.response?.data?.message || "Something went wrong");
       } else {
         toast.error("Unexpected error occurred");
       }
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) setLoading(false);
     }
+  }, [pagination.page, pagination.rows, debouncedSearch, statusFilter]);
+
+  useEffect(() => {
+    getOrders();
+  }, [getOrders]);
+
+  // debounce + page reset ekshathe (double fetch hobe na)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const next = searchInput.trim();
+      setDebouncedSearch((prev) => {
+        if (prev !== next) {
+          setPagination((p) => ({ ...p, page: 1 }));
+        }
+        return next;
+      });
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  const handleStatusFilterChange = (value: OrderStatus | "ALL") => {
+    setStatusFilter(value);
+    setPagination((p) => ({ ...p, page: 1 }));
   };
 
   const goToDetails = (orderId: string) => {
@@ -121,10 +154,14 @@ function OrdersPage() {
       const res = await updateOrderStatusApi(orderId, status, note);
       toast.success(res.data.message || `Order marked as ${status}`);
 
-      // optimistic local update, full refetch na kore
-      setOrderData((prev) =>
-        prev.map((o) => (o._id === orderId ? { ...o, ...res.data.order } : o)),
-      );
+      if (statusFilter !== "ALL") {
+        // filter on thakle row ta ar ei list e thakbe na, tai refetch
+        await getOrders();
+      } else {
+        setOrderData((prev) =>
+          prev.map((o) => (o._id === orderId ? mergeOrder(o, res.data.order) : o)),
+        );
+      }
     } catch (err: any) {
       toast.error(err?.response?.data?.message || "Status update failed");
     } finally {
@@ -148,6 +185,11 @@ function OrdersPage() {
     });
   };
 
+  const closeCancelDialog = () => {
+    setCancelDialog({ visible: false, orderId: null });
+    setCancelNote("");
+  };
+
   const confirmCancelOrder = async () => {
     if (!cancelDialog.orderId) return;
     await applyStatusChange(
@@ -155,8 +197,7 @@ function OrdersPage() {
       "CANCELLED",
       cancelNote.trim() || undefined,
     );
-    setCancelDialog({ visible: false, orderId: null });
-    setCancelNote("");
+    closeCancelDialog();
   };
 
   const statusTemplate = (rowData: OrderRow) => (
@@ -167,14 +208,15 @@ function OrdersPage() {
     </span>
   );
 
-  const customerTemplate = (rowData: OrderRow) => (
-    <div>
-      <p className="font-medium text-gray-800">
-        {rowData.userId?.name || "N/A"}
-      </p>
-      <p className="text-xs text-gray-500">{rowData.userId?.phone}</p>
-    </div>
-  );
+  const customerTemplate = (rowData: OrderRow) => {
+    const c = getCustomer(rowData);
+    return (
+      <div>
+        <p className="font-medium text-gray-800">{c.name}</p>
+        <p className="text-xs text-gray-500">{c.phone}</p>
+      </div>
+    );
+  };
 
   const itemsTemplate = (rowData: OrderRow) => (
     <span>
@@ -195,9 +237,7 @@ function OrdersPage() {
 
   // View + status-change dropdown ekshathe (SplitButton)
   const actionTemplate = (rowData: OrderRow) => {
-    const nextStatuses = getNextStatuses(rowData.status);
-
-    const items = nextStatuses.map((s) => ({
+    const items = getNextStatuses(rowData.status).map((s) => ({
       label: `Mark as ${s}`,
       icon: STATUS_ICONS[s],
       command: () => requestStatusChange(rowData, s),
@@ -211,12 +251,13 @@ function OrdersPage() {
           onClick={() => goToDetails(rowData._id)}
           model={items}
           loading={updatingId === rowData._id}
-          disabled={items.length === 0 && false} // View always enabled
           className="text-xs [&_.p-splitbutton-defaultbutton]:!bg-[#3b82f6] [&_.p-splitbutton-defaultbutton]:!text-white [&_.p-splitbutton-defaultbutton]:!border-[#2563eb]"
         />
       </div>
     );
   };
+
+  const totalPages = Math.max(1, Math.ceil(pagination.total / pagination.rows));
 
   const header = (
     <div
@@ -224,9 +265,7 @@ function OrdersPage() {
       style={{ background: "linear-gradient(120deg,#3b82f6,#1d4ed8)" }}
     >
       <div className="min-w-0">
-        <h2 className="text-sm sm:text-base font-semibold text-white">
-          Orders
-        </h2>
+        <h2 className="text-sm sm:text-base font-semibold text-white">Orders</h2>
         <p className="text-xs text-blue-100">Manage customer orders</p>
       </div>
 
@@ -247,7 +286,7 @@ function OrdersPage() {
         <select
           value={statusFilter}
           onChange={(e) =>
-            setStatusFilter(e.target.value as OrderStatus | "ALL")
+            handleStatusFilterChange(e.target.value as OrderStatus | "ALL")
           }
           className="p-inputtext-sm border rounded-md px-2 py-1.5 bg-white"
         >
@@ -292,13 +331,15 @@ function OrdersPage() {
       <div className="w-full bg-white rounded-lg shadow p-2 sm:p-4">
         {header}
 
-        {orderData.length === 0 && !loading && <EmptyState />}
+        {loading && orderData.length === 0 && <Spinner />}
+        {!loading && orderData.length === 0 && <EmptyState />}
 
         {viewMode === "card" && orderData.length > 0 && (
-          <div className="p-2">
+          <div className={`p-2 ${loading ? "opacity-60 pointer-events-none" : ""}`}>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
               {orderData.map((order) => {
                 const nextStatuses = getNextStatuses(order.status);
+                const customer = getCustomer(order);
                 return (
                   <div
                     key={order._id}
@@ -327,11 +368,11 @@ function OrdersPage() {
                       <div className="text-xs text-gray-700 space-y-0.5">
                         <p>
                           <span className="font-medium">👤 Customer:</span>{" "}
-                          {order.userId?.name}
+                          {customer.name}
                         </p>
                         <p>
                           <span className="font-medium">📞 Phone:</span>{" "}
-                          {order.userId?.phone}
+                          {customer.phone || "-"}
                         </p>
                         <p>
                           <span className="font-medium">📦 Items:</span>{" "}
@@ -385,13 +426,13 @@ function OrdersPage() {
               })}
             </div>
 
-            <div className="flex justify-between items-center mt-4 p-2.5 border-t border-blue-100">
+            <div className="flex flex-col sm:flex-row gap-2 sm:justify-between sm:items-center mt-4 p-2.5 border-t border-blue-100">
               <p className="text-sm text-gray-600">
                 Showing {(pagination.page - 1) * pagination.rows + 1} to{" "}
-                {Math.min(pagination.page * pagination.rows, pagination.total)}{" "}
-                of {pagination.total} orders
+                {Math.min(pagination.page * pagination.rows, pagination.total)} of{" "}
+                {pagination.total} orders
               </p>
-              <div className="flex gap-2">
+              <div className="flex gap-2 items-center">
                 <Button
                   icon="pi pi-chevron-left"
                   onClick={() =>
@@ -403,22 +444,16 @@ function OrdersPage() {
                   text
                 />
                 <span className="px-3 py-2 bg-blue-50 text-blue-700 rounded">
-                  {pagination.page} /{" "}
-                  {Math.max(1, Math.ceil(pagination.total / pagination.rows))}
+                  {pagination.page} / {totalPages}
                 </span>
                 <Button
                   icon="pi pi-chevron-right"
                   onClick={() =>
                     setPagination((prev) =>
-                      prev.page < Math.ceil(prev.total / prev.rows)
-                        ? { ...prev, page: prev.page + 1 }
-                        : prev,
+                      prev.page < totalPages ? { ...prev, page: prev.page + 1 } : prev,
                     )
                   }
-                  disabled={
-                    pagination.page ===
-                    Math.max(1, Math.ceil(pagination.total / pagination.rows))
-                  }
+                  disabled={pagination.page >= totalPages}
                   text
                 />
               </div>
@@ -445,18 +480,16 @@ function OrdersPage() {
             }
             responsiveLayout="scroll"
             onRowClick={(e) => goToDetails((e.data as OrderRow)._id)}
-            className="cursor-pointer"
+            rowClassName={() => "cursor-pointer"}
             emptyMessage={<EmptyState />}
           >
-            <Column field="orderNumber" header="Order #" sortable />
+            <Column field="orderNumber" header="Order #" />
             <Column header="Customer" body={customerTemplate} />
             <Column header="Items" body={itemsTemplate} />
             <Column header="Amount" body={amountTemplate} />
             <Column
               header="Payment"
-              body={(row: OrderRow) =>
-                `${row.paymentMethod} • ${row.paymentStatus}`
-              }
+              body={(row: OrderRow) => `${row.paymentMethod} • ${row.paymentStatus}`}
             />
             <Column header="Status" body={statusTemplate} />
             <Column
@@ -476,11 +509,10 @@ function OrdersPage() {
           header="Cancel Order"
           visible={cancelDialog.visible}
           style={{ width: "28rem" }}
-          onHide={() => setCancelDialog({ visible: false, orderId: null })}
+          breakpoints={{ "641px": "95vw" }}
+          onHide={closeCancelDialog}
         >
-          <p className="text-sm text-gray-600 mb-2">
-            Cancellation reason (optional):
-          </p>
+          <p className="text-sm text-gray-600 mb-2">Cancellation reason (optional):</p>
           <InputTextarea
             value={cancelNote}
             onChange={(e) => setCancelNote(e.target.value)}
@@ -489,11 +521,7 @@ function OrdersPage() {
             placeholder="e.g. Out of stock"
           />
           <div className="flex justify-end gap-2 mt-4">
-            <Button
-              label="Close"
-              text
-              onClick={() => setCancelDialog({ visible: false, orderId: null })}
-            />
+            <Button label="Close" text onClick={closeCancelDialog} />
             <Button
               label="Confirm Cancel"
               severity="danger"

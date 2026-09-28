@@ -43,6 +43,50 @@ const UNIT_OPTIONS = [
   { label: "Pack", value: "PACK" },
 ];
 
+// ---------- Media (image + gif + video) config: backend multer er sathe match kora ----------
+const ALLOWED_MEDIA_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "image/avif",
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
+];
+const MEDIA_ACCEPT = ALLOWED_MEDIA_TYPES.join(",");
+const MAX_MEDIA_SIZE_MB = 50;
+const MAX_MEDIA_SIZE_BYTES = MAX_MEDIA_SIZE_MB * 1024 * 1024;
+const MAX_FILES_PER_REQUEST = 30;
+
+const VIDEO_URL_REGEX = /\.(mp4|webm|mov)(\?.*)?$/i;
+const isVideoUrl = (url?: string | null) => !!url && VIDEO_URL_REGEX.test(url);
+const isVideoFile = (file?: File | null) =>
+  !!file && file.type.startsWith("video/");
+
+// invalid type / oversize / empty file bad diye valid gulo return kore, reason toast e dekhay
+const filterMediaFiles = (files: File[]): File[] => {
+  const valid: File[] = [];
+  files.forEach((file) => {
+    if (!ALLOWED_MEDIA_TYPES.includes(file.type)) {
+      toast.error(
+        `"${file.name}" is not supported. Use JPG, PNG, WEBP, GIF, AVIF, MP4, WEBM or MOV.`,
+      );
+      return;
+    }
+    if (file.size > MAX_MEDIA_SIZE_BYTES) {
+      toast.error(`"${file.name}" is too large. Max ${MAX_MEDIA_SIZE_MB}MB.`);
+      return;
+    }
+    if (file.size === 0) {
+      toast.error(`"${file.name}" is empty.`);
+      return;
+    }
+    valid.push(file);
+  });
+  return valid;
+};
+
 const isValidObjectId = (id?: string | null) =>
   !!id && /^[a-fA-F0-9]{24}$/.test(id);
 
@@ -59,8 +103,7 @@ const hasAttribute = (v: any) =>
 const isEmptySizeVariant = (v: any) =>
   !hasAttribute(v) && !v?.sku && isNil(v?.mrp) && isNil(v?.offerPrice);
 
-const hasPackaging = (p: any) =>
-  !!p && Object.values(p).some((x) => !isNil(x));
+const hasPackaging = (p: any) => !!p && Object.values(p).some((x) => !isNil(x));
 
 // row packaging if filled, otherwise the global packaging
 const packagingOf = (own: any, fallback: any) =>
@@ -84,6 +127,7 @@ type Defaults = {
   mrp?: number | null;
   offerPrice?: number | null;
   openingStock?: number | null;
+  lowStockThreshold?: number | null;
   sku?: string | null;
 };
 
@@ -94,6 +138,7 @@ const buildEmptySizeVariant = (d: Defaults = {}) => ({
   mrp: (d.mrp ?? undefined) as number | undefined,
   offerPrice: (d.offerPrice ?? undefined) as number | undefined,
   openingStock: d.openingStock ?? 0,
+  lowStockThreshold: d.lowStockThreshold ?? 0,
   sku: d.sku ?? "",
   packagingDetails: {} as PackagingDetails,
 });
@@ -104,6 +149,7 @@ const buildEmptyColorVariant = (withSize = false, d: Defaults = {}) => ({
   mrp: (d.mrp ?? undefined) as number | undefined,
   offerPrice: (d.offerPrice ?? undefined) as number | undefined,
   openingStock: d.openingStock ?? 0,
+  lowStockThreshold: d.lowStockThreshold ?? 0,
   sku: d.sku ?? "",
   packagingDetails: {} as PackagingDetails,
   sizeVariants: (withSize ? [buildEmptySizeVariant(d)] : []) as ReturnType<
@@ -130,6 +176,55 @@ const firstErrorMessage = (errs: any): string | null => {
   }
   return null;
 };
+
+// ===============================================================
+// Media thumbnail (image / gif / video) with remove button
+// ===============================================================
+function MediaThumb({
+  src,
+  isVideo,
+  sizeClass,
+  removeBtnClass,
+  onRemove,
+}: {
+  src: string;
+  isVideo: boolean;
+  sizeClass: string;
+  removeBtnClass: string;
+  onRemove: () => void;
+}) {
+  return (
+    <div
+      className={`relative rounded-lg overflow-hidden border bg-gray-100 ${sizeClass}`}
+    >
+      {isVideo ? (
+        <>
+          {/* #t=0.1 : iOS Safari e first frame poster hishebe dekhate help kore */}
+          <video
+            src={`${src}#t=0.1`}
+            muted
+            playsInline
+            preload="metadata"
+            className="w-full h-full object-cover"
+          />
+          <span className="absolute bottom-0.5 left-0.5 bg-black/60 text-white rounded px-1 text-[9px] flex items-center gap-0.5 pointer-events-none">
+            <i className="pi pi-play text-[8px]"></i>
+            Video
+          </span>
+        </>
+      ) : (
+        <img src={src} alt="" className="w-full h-full object-cover" />
+      )}
+      <button
+        type="button"
+        onClick={onRemove}
+        className={`absolute bg-red-500 text-white rounded-full flex items-center justify-center ${removeBtnClass}`}
+      >
+        ×
+      </button>
+    </div>
+  );
+}
 
 // ===============================================================
 // Collapsible Packaging Details block
@@ -240,7 +335,7 @@ function SizeVariantRow({
         Fill at least one of Size, Weight or Height{" "}
         <span className="text-red-500">*</span>
       </p>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2">
         <div className="space-y-1 min-w-0">
           <label className="text-[10px] font-semibold text-gray-600">
             Size
@@ -335,6 +430,26 @@ function SizeVariantRow({
             )}
           />
         </div>
+        <div className="space-y-1 min-w-0">
+          <label className="text-[10px] font-semibold text-gray-600">
+            Low Stock Alert
+          </label>
+          <Controller
+            name={`${basePath}.lowStockThreshold` as any}
+            control={control}
+            render={({ field }) => (
+              <InputNumber
+                value={field.value ?? 0}
+                onValueChange={(e) => field.onChange(e.value)}
+                className="w-full"
+                inputClassName="w-full p-inputtext-sm"
+                min={0}
+                useGrouping={false}
+                placeholder="0 = off"
+              />
+            )}
+          />
+        </div>
         <div className="space-y-1 min-w-0 col-span-2 sm:col-span-1">
           <label className="text-[10px] font-semibold text-gray-600">SKU</label>
           <InputText
@@ -388,9 +503,7 @@ function ColorVariantBlock({
   const sizeMode = sizeFields.length > 0;
 
   const toggleSizeMode = (on: boolean) =>
-    on
-      ? appendSize(buildEmptySizeVariant(getDefaults()))
-      : replaceSizes([]);
+    on ? appendSize(buildEmptySizeVariant(getDefaults())) : replaceSizes([]);
 
   return (
     <div className="border border-blue-100 rounded-xl p-2.5 bg-white shadow-sm">
@@ -414,48 +527,38 @@ function ColorVariantBlock({
         )}
       </div>
 
-      {/* Color images (required) */}
+      {/* Color media (image / gif / video) - required */}
       <div className="space-y-1.5 mb-2.5">
         <label className="text-[11px] font-semibold text-gray-600">
-          Color Images <span className="text-red-500">*</span>
+          Color Images / Videos <span className="text-red-500">*</span>
         </label>
         <div className="flex gap-2 flex-wrap">
           {imgState.existing.map((url, i) => (
-            <div
+            <MediaThumb
               key={`ex-${i}`}
-              className="relative w-14 h-14 rounded-lg overflow-hidden border"
-            >
-              <img src={url} className="w-full h-full object-cover" alt="" />
-              <button
-                type="button"
-                onClick={() => onRemoveImage(i, true)}
-                className="absolute top-0.5 right-0.5 bg-red-500 text-white rounded-full text-[9px] w-4 h-4 flex items-center justify-center"
-              >
-                ×
-              </button>
-            </div>
+              src={url}
+              isVideo={isVideoUrl(url)}
+              sizeClass="w-14 h-14"
+              removeBtnClass="top-0.5 right-0.5 text-[9px] w-4 h-4"
+              onRemove={() => onRemoveImage(i, true)}
+            />
           ))}
           {imgState.previews.map((src, i) => (
-            <div
+            <MediaThumb
               key={`new-${i}`}
-              className="relative w-14 h-14 rounded-lg overflow-hidden border"
-            >
-              <img src={src} className="w-full h-full object-cover" alt="" />
-              <button
-                type="button"
-                onClick={() => onRemoveImage(i, false)}
-                className="absolute top-0.5 right-0.5 bg-red-500 text-white rounded-full text-[9px] w-4 h-4 flex items-center justify-center"
-              >
-                ×
-              </button>
-            </div>
+              src={src}
+              isVideo={isVideoFile(imgState.files[i])}
+              sizeClass="w-14 h-14"
+              removeBtnClass="top-0.5 right-0.5 text-[9px] w-4 h-4"
+              onRemove={() => onRemoveImage(i, false)}
+            />
           ))}
         </div>
         <div className="flex gap-2 items-center">
           <input
             type="file"
             multiple
-            accept="image/*"
+            accept={MEDIA_ACCEPT}
             onChange={(e) => {
               if (!e.target.files) return;
               onAddImages(Array.from(e.target.files));
@@ -471,6 +574,10 @@ function ColorVariantBlock({
             onClick={onOpenCamera}
           />
         </div>
+        <p className="text-[10px] text-gray-400">
+          JPG, PNG, WEBP, GIF, AVIF, MP4, WEBM, MOV. Max {MAX_MEDIA_SIZE_MB}MB
+          per file.
+        </p>
       </div>
 
       {/* Per-color size toggle (independent of the global toggle) */}
@@ -514,7 +621,7 @@ function ColorVariantBlock({
         </div>
       ) : (
         <div className="border border-blue-100 rounded-lg p-2 bg-blue-50/30">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
             <div className="space-y-1 min-w-0">
               <label className="text-[10px] font-semibold text-gray-600">
                 MRP <span className="text-red-500">*</span>
@@ -581,6 +688,26 @@ function ColorVariantBlock({
             </div>
             <div className="space-y-1 min-w-0">
               <label className="text-[10px] font-semibold text-gray-600">
+                Low Stock Alert
+              </label>
+              <Controller
+                name={`variants.${colorIndex}.lowStockThreshold` as any}
+                control={control}
+                render={({ field }) => (
+                  <InputNumber
+                    value={field.value ?? 0}
+                    onValueChange={(e) => field.onChange(e.value)}
+                    className="w-full"
+                    inputClassName="w-full p-inputtext-sm"
+                    min={0}
+                    useGrouping={false}
+                    placeholder="0 = off"
+                  />
+                )}
+              />
+            </div>
+            <div className="space-y-1 min-w-0">
+              <label className="text-[10px] font-semibold text-gray-600">
                 SKU
               </label>
               <InputText
@@ -639,6 +766,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
       mrp: undefined,
       offerPrice: undefined,
       openingStock: 0,
+      lowStockThreshold: 0,
       packagingDetails: {},
       variants: [],
     },
@@ -684,16 +812,21 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
     mrp: getValues("mrp") as any,
     offerPrice: getValues("offerPrice") as any,
     openingStock: (getValues("openingStock") as any) ?? 0,
+    lowStockThreshold: (getValues("lowStockThreshold" as any) as any) ?? 0,
     sku: (getValues("sku" as any) as any) ?? "",
   });
 
   const normalize = (field: string, v: any) =>
-    field === "openingStock" ? (v ?? 0) : isNil(v) ? null : v;
+    field === "openingStock" || field === "lowStockThreshold"
+      ? (v ?? 0)
+      : isNil(v)
+        ? null
+        : v;
 
   // Update the global field, then copy the new value into every color / size row
   // whose value still equals the previous global value (manual edits are kept).
   const onGlobalChange = (
-    field: "mrp" | "offerPrice" | "openingStock" | "sku",
+    field: "mrp" | "offerPrice" | "openingStock" | "lowStockThreshold" | "sku",
     next: any,
   ) => {
     const prev = getValues(field as any);
@@ -714,12 +847,14 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
     });
   };
 
+  // ---------- Main product media (image / gif / video) ----------
   const addImageFiles = (files: File[]) => {
-    if (!files.length) return;
-    setImageFiles((prev) => [...prev, ...files]);
+    const valid = filterMediaFiles(files);
+    if (!valid.length) return;
+    setImageFiles((prev) => [...prev, ...valid]);
     setImagePreviews((prev) => [
       ...prev,
-      ...files.map((f) => URL.createObjectURL(f)),
+      ...valid.map((f) => URL.createObjectURL(f)),
     ]);
   };
 
@@ -746,21 +881,23 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
     setImagePreviews([]);
   };
 
+  // ---------- Color media ----------
   const getColorImageState = (uiKey: string): ImageState =>
     colorImages[uiKey] || { existing: [], files: [], previews: [] };
 
   const addColorImageFiles = (uiKey: string, files: File[]) => {
-    if (!files.length) return;
+    const valid = filterMediaFiles(files);
+    if (!valid.length) return;
     setColorImages((prev) => {
       const cur = prev[uiKey] || { existing: [], files: [], previews: [] };
       return {
         ...prev,
         [uiKey]: {
           ...cur,
-          files: [...cur.files, ...files],
+          files: [...cur.files, ...valid],
           previews: [
             ...cur.previews,
-            ...files.map((f) => URL.createObjectURL(f)),
+            ...valid.map((f) => URL.createObjectURL(f)),
           ],
         },
       };
@@ -1031,6 +1168,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
         setValue("mrp", product.mrp ?? 0);
         setValue("offerPrice", product.offerPrice ?? undefined);
         setValue("openingStock", product.openingStock ?? 0);
+        setValue("lowStockThreshold" as any, product.lowStockThreshold ?? 0);
         setCurrentStockInfo(product.currentStock ?? null);
         replaceVariants([]);
       } else {
@@ -1040,6 +1178,10 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
         setValue("mrp", firstRow?.mrp ?? undefined);
         setValue("offerPrice", firstRow?.offerPrice ?? undefined);
         setValue("openingStock", firstRow?.openingStock ?? 0);
+        setValue(
+          "lowStockThreshold" as any,
+          firstRow?.lowStockThreshold ?? 0,
+        );
         setValue("sku" as any, (firstRow?.sku || "") as any);
 
         if (productHasColor) {
@@ -1052,6 +1194,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
               mrp: v.mrp ?? undefined,
               offerPrice: v.offerPrice ?? undefined,
               openingStock: v.openingStock ?? 0,
+              lowStockThreshold: v.lowStockThreshold ?? 0,
               sku: v.sku || "",
               packagingDetails: v.packagingDetails || {},
               sizeVariants: isSized(v)
@@ -1062,6 +1205,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
                     mrp: sv.mrp,
                     offerPrice: sv.offerPrice,
                     openingStock: sv.openingStock ?? 0,
+                    lowStockThreshold: sv.lowStockThreshold ?? 0,
                     sku: sv.sku || "",
                     packagingDetails: sv.packagingDetails || {},
                   }))
@@ -1089,6 +1233,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
               mrp: v.mrp,
               offerPrice: v.offerPrice,
               openingStock: v.openingStock ?? 0,
+              lowStockThreshold: v.lowStockThreshold ?? 0,
               sku: v.sku || "",
               packagingDetails: v.packagingDetails || {},
             })),
@@ -1165,9 +1310,21 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
     const values = getValues();
     const variants = (values.variants || []) as any[];
 
-    // ---- Images ----
+    // ---- Media ----
     if (!hasColor && existingImages.length + imageFiles.length === 0) {
-      return "Product image is required. Add at least one image in the 'Product Images' section.";
+      return "Product image is required. Add at least one image or video in the 'Product Images / Videos' section.";
+    }
+
+    // ---- Total upload count (backend multer files limit) ----
+    let totalNewFiles = imageFiles.length;
+    if (hasColor) {
+      variants.forEach((_, i) => {
+        totalNewFiles += getColorImageState(getUiKey(variantFields[i])).files
+          .length;
+      });
+    }
+    if (totalNewFiles > MAX_FILES_PER_REQUEST) {
+      return `Too many files. You can upload at most ${MAX_FILES_PER_REQUEST} new files at once (currently ${totalNewFiles}).`;
     }
 
     // ---- Simple product ----
@@ -1187,7 +1344,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
 
         const imgs = getColorImageState(getUiKey(variantFields[i]));
         if (imgs.existing.length + imgs.files.length === 0)
-          return `${label}at least one image is required`;
+          return `${label}at least one image or video is required`;
 
         const sizeRows = Array.isArray(v.sizeVariants) ? v.sizeVariants : [];
 
@@ -1259,6 +1416,10 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
         formData.append("mrp", String(values.mrp ?? 0));
         if (!isNil(values.offerPrice))
           formData.append("offerPrice", String(values.offerPrice));
+        formData.append(
+          "lowStockThreshold",
+          String((values as any).lowStockThreshold ?? 0),
+        );
         formData.append("openingStock", String(values.openingStock ?? 0));
         formData.append("packagingDetails", JSON.stringify(globalPackaging));
         formData.append("variants", JSON.stringify([]));
@@ -1293,6 +1454,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
                   mrp: sv.mrp,
                   offerPrice: isNil(sv.offerPrice) ? undefined : sv.offerPrice,
                   openingStock: sv.openingStock ?? 0,
+                  lowStockThreshold: sv.lowStockThreshold ?? 0,
                   sku: sv.sku || undefined,
                   packagingDetails: packagingOf(
                     sv.packagingDetails,
@@ -1309,8 +1471,12 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
               mrp: v.mrp,
               offerPrice: isNil(v.offerPrice) ? undefined : v.offerPrice,
               openingStock: v.openingStock ?? 0,
+              lowStockThreshold: v.lowStockThreshold ?? 0,
               sku: v.sku || undefined,
-              packagingDetails: packagingOf(v.packagingDetails, globalPackaging),
+              packagingDetails: packagingOf(
+                v.packagingDetails,
+                globalPackaging,
+              ),
             };
           }
 
@@ -1321,6 +1487,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
             mrp: v.mrp,
             offerPrice: isNil(v.offerPrice) ? undefined : v.offerPrice,
             openingStock: v.openingStock ?? 0,
+            lowStockThreshold: v.lowStockThreshold ?? 0,
             sku: v.sku || undefined,
             packagingDetails: packagingOf(v.packagingDetails, globalPackaging),
           };
@@ -1346,6 +1513,8 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
         method: isEditMode ? "put" : "post",
         data: formData,
         headers: { "Content-Type": "multipart/form-data" },
+        // video upload e time lage, default timeout e fail na hoy
+        timeout: 5 * 60 * 1000,
       });
 
       toast.success(
@@ -1380,10 +1549,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
 
   return (
     <div className="px-4 pt-2 pb-3 min-h-[80vh]">
-      <form
-        onSubmit={handleSubmit(onSubmit, onInvalid)}
-        className="space-y-3"
-      >
+      <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="space-y-3">
         {isEditMode && productCode && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-1.5 flex items-center gap-2 flex-wrap">
             <i className="pi pi-hashtag text-blue-500"></i>
@@ -1505,16 +1671,16 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
           </div>
         </div>
 
-        {/* Main Product Images: required when color is off, optional when on */}
+        {/* Main Product Media: required when color is off, optional when on */}
         <div className="space-y-1.5">
           <h4 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
             <i className="pi pi-image text-blue-600"></i>
-            Product Images
+            Product Images / Videos
             {!hasColor ? (
               <span className="text-red-500">*</span>
             ) : (
               <span className="text-xs font-normal text-gray-500">
-                (optional — add images inside each color)
+                (optional — add images/videos inside each color)
               </span>
             )}
           </h4>
@@ -1522,42 +1688,24 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
           {(existingImages.length > 0 || imagePreviews.length > 0) && (
             <div className="flex gap-2 flex-wrap">
               {existingImages.map((url, idx) => (
-                <div
+                <MediaThumb
                   key={`ex-${idx}`}
-                  className="relative w-32 h-24 rounded overflow-hidden border"
-                >
-                  <img
-                    src={url}
-                    alt={`img-${idx}`}
-                    className="w-full h-full object-cover"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeImage(idx, true)}
-                    className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full text-xs"
-                  >
-                    ×
-                  </button>
-                </div>
+                  src={url}
+                  isVideo={isVideoUrl(url)}
+                  sizeClass="w-32 h-24"
+                  removeBtnClass="top-1 right-1 p-1 text-xs"
+                  onRemove={() => removeImage(idx, true)}
+                />
               ))}
               {imagePreviews.map((src, idx) => (
-                <div
+                <MediaThumb
                   key={`new-${idx}`}
-                  className="relative w-32 h-24 rounded overflow-hidden border"
-                >
-                  <img
-                    src={src}
-                    alt={`preview-${idx}`}
-                    className="w-full h-full object-cover"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeImage(idx, false)}
-                    className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full text-xs"
-                  >
-                    ×
-                  </button>
-                </div>
+                  src={src}
+                  isVideo={isVideoFile(imageFiles[idx])}
+                  sizeClass="w-32 h-24"
+                  removeBtnClass="top-1 right-1 p-1 text-xs"
+                  onRemove={() => removeImage(idx, false)}
+                />
               ))}
             </div>
           )}
@@ -1568,7 +1716,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
               multiple
               onChange={handleImageChange}
               className="flex-1 min-w-0 p-1.5 border border-blue-200 rounded-lg"
-              accept="image/*"
+              accept={MEDIA_ACCEPT}
             />
             <Button
               type="button"
@@ -1579,6 +1727,10 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
               className="shrink-0"
             />
           </div>
+          <p className="text-[11px] text-gray-400">
+            Supported: JPG, PNG, WEBP, GIF, AVIF, MP4, WEBM, MOV. Max{" "}
+            {MAX_MEDIA_SIZE_MB}MB per file.
+          </p>
         </div>
 
         {/* VARIANT TOGGLES — independent */}
@@ -1589,7 +1741,8 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
                 Color variants
               </p>
               <p className="text-xs text-gray-500">
-                Each color gets its own images. Size / Weight not required.
+                Each color gets its own images/videos. Size / Weight not
+                required.
               </p>
             </div>
             <InputSwitch
@@ -1628,11 +1781,10 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
               change them in any individual variant.
             </p>
           )}
-          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-4">
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-5">
             <div className="space-y-1">
               <label className="text-xs font-semibold text-gray-700">
-                MRP{" "}
-                {!hasVariants && <span className="text-red-500">*</span>}
+                MRP {!hasVariants && <span className="text-red-500">*</span>}
               </label>
               <Controller
                 name="mrp"
@@ -1690,6 +1842,28 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
                       onGlobalChange("openingStock", e.value ?? 0)
                     }
                     placeholder="Opening stock"
+                    min={0}
+                    className="w-full"
+                    inputClassName="w-full"
+                    useGrouping={false}
+                  />
+                )}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-gray-700">
+                Low Stock Alert
+              </label>
+              <Controller
+                name={"lowStockThreshold" as any}
+                control={control}
+                render={({ field: f }) => (
+                  <InputNumber
+                    value={f.value ?? 0}
+                    onValueChange={(e) =>
+                      onGlobalChange("lowStockThreshold", e.value ?? 0)
+                    }
+                    placeholder="0 = off"
                     min={0}
                     className="w-full"
                     inputClassName="w-full"
