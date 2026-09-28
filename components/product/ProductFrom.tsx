@@ -46,6 +46,26 @@ const UNIT_OPTIONS = [
 const isValidObjectId = (id?: string | null) =>
   !!id && /^[a-fA-F0-9]{24}$/.test(id);
 
+const isNil = (v: any) => v === undefined || v === null || v === "";
+
+const hasAttribute = (v: any) =>
+  !!(
+    String(v?.size ?? "").trim() ||
+    String(v?.weight ?? "").trim() ||
+    String(v?.height ?? "").trim()
+  );
+
+// stray default row (no text / no price) -> silently skipped
+const isEmptySizeVariant = (v: any) =>
+  !hasAttribute(v) && !v?.sku && isNil(v?.mrp) && isNil(v?.offerPrice);
+
+const hasPackaging = (p: any) =>
+  !!p && Object.values(p).some((x) => !isNil(x));
+
+// row packaging if filled, otherwise the global packaging
+const packagingOf = (own: any, fallback: any) =>
+  hasPackaging(own) ? own : fallback || {};
+
 const genUiKey = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
@@ -59,26 +79,36 @@ type PackagingDetails = {
   weight?: number;
 };
 
-const buildEmptySizeVariant = () => ({
+// global values that pre-fill every new / untouched row
+type Defaults = {
+  mrp?: number | null;
+  offerPrice?: number | null;
+  openingStock?: number | null;
+  sku?: string | null;
+};
+
+const buildEmptySizeVariant = (d: Defaults = {}) => ({
   size: "",
   weight: "",
   height: "",
-  mrp: undefined as number | undefined,
-  offerPrice: undefined as number | undefined,
-  openingStock: 0,
-  sku: "",
+  mrp: (d.mrp ?? undefined) as number | undefined,
+  offerPrice: (d.offerPrice ?? undefined) as number | undefined,
+  openingStock: d.openingStock ?? 0,
+  sku: d.sku ?? "",
   packagingDetails: {} as PackagingDetails,
 });
 
-const buildEmptyColorVariant = () => ({
+const buildEmptyColorVariant = (withSize = false, d: Defaults = {}) => ({
   _uiKey: genUiKey(),
   color: "",
-  mrp: undefined as number | undefined,
-  offerPrice: undefined as number | undefined,
-  openingStock: 0,
-  sku: "",
+  mrp: (d.mrp ?? undefined) as number | undefined,
+  offerPrice: (d.offerPrice ?? undefined) as number | undefined,
+  openingStock: d.openingStock ?? 0,
+  sku: d.sku ?? "",
   packagingDetails: {} as PackagingDetails,
-  sizeVariants: [] as ReturnType<typeof buildEmptySizeVariant>[],
+  sizeVariants: (withSize ? [buildEmptySizeVariant(d)] : []) as ReturnType<
+    typeof buildEmptySizeVariant
+  >[],
 });
 
 type FacingMode = "user" | "environment";
@@ -89,8 +119,20 @@ type ImageState = {
   previews: string[];
 };
 
+// first message from a zod / react-hook-form error tree
+const firstErrorMessage = (errs: any): string | null => {
+  if (!errs || typeof errs !== "object") return null;
+  if (typeof errs.message === "string" && errs.message) return errs.message;
+  for (const key of Object.keys(errs)) {
+    if (key === "ref") continue;
+    const m = firstErrorMessage(errs[key]);
+    if (m) return m;
+  }
+  return null;
+};
+
 // ===============================================================
-// Reusable: collapsible Packaging Details block
+// Collapsible Packaging Details block
 // ===============================================================
 function PackagingFieldsBlock({
   control,
@@ -165,7 +207,7 @@ function PackagingFieldsBlock({
 }
 
 // ===============================================================
-// Reusable: single Size/Weight/Height row
+// Single Size/Weight/Height row
 // ===============================================================
 function SizeVariantRow({
   control,
@@ -194,6 +236,10 @@ function SizeVariantRow({
           <i className="pi pi-times-circle"></i>
         </button>
       )}
+      <p className="text-[10px] text-gray-500 mb-1.5">
+        Fill at least one of Size, Weight or Height{" "}
+        <span className="text-red-500">*</span>
+      </p>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
         <div className="space-y-1 min-w-0">
           <label className="text-[10px] font-semibold text-gray-600">
@@ -249,7 +295,7 @@ function SizeVariantRow({
         </div>
         <div className="space-y-1 min-w-0">
           <label className="text-[10px] font-semibold text-gray-600">
-            Offer Price <span className="text-red-500">*</span>
+            Offer Price
           </label>
           <Controller
             name={`${basePath}.offerPrice` as any}
@@ -265,6 +311,7 @@ function SizeVariantRow({
                 minFractionDigits={2}
                 maxFractionDigits={2}
                 useGrouping={false}
+                placeholder="Optional"
               />
             )}
           />
@@ -306,7 +353,7 @@ function SizeVariantRow({
 }
 
 // ===============================================================
-// Reusable: one Color block, with its own nested sizeVariants field-array
+// One Color block
 // ===============================================================
 function ColorVariantBlock({
   control,
@@ -318,6 +365,7 @@ function ColorVariantBlock({
   onAddImages,
   onRemoveImage,
   onOpenCamera,
+  getDefaults,
 }: {
   control: Control<any>;
   register: any;
@@ -328,19 +376,21 @@ function ColorVariantBlock({
   onAddImages: (files: File[]) => void;
   onRemoveImage: (index: number, isExisting: boolean) => void;
   onOpenCamera: () => void;
+  getDefaults: () => Defaults;
 }) {
   const {
     fields: sizeFields,
     append: appendSize,
     remove: removeSize,
+    replace: replaceSizes,
   } = useFieldArray({ control, name: `variants.${colorIndex}.sizeVariants` });
 
   const sizeMode = sizeFields.length > 0;
 
-  const enableSizeMode = () => appendSize(buildEmptySizeVariant());
-  const disableSizeMode = () => {
-    for (let i = sizeFields.length - 1; i >= 0; i--) removeSize(i);
-  };
+  const toggleSizeMode = (on: boolean) =>
+    on
+      ? appendSize(buildEmptySizeVariant(getDefaults()))
+      : replaceSizes([]);
 
   return (
     <div className="border border-blue-100 rounded-xl p-2.5 bg-white shadow-sm">
@@ -350,7 +400,7 @@ function ColorVariantBlock({
           <InputText
             className="w-full max-w-[220px] p-inputtext-sm font-semibold"
             {...register(`variants.${colorIndex}.color`)}
-            placeholder="Color name e.g. Red"
+            placeholder="Color name e.g. Red *"
           />
         </div>
         {canRemoveColor && (
@@ -364,10 +414,10 @@ function ColorVariantBlock({
         )}
       </div>
 
-      {/* Color images */}
+      {/* Color images (required) */}
       <div className="space-y-1.5 mb-2.5">
         <label className="text-[11px] font-semibold text-gray-600">
-          Color Images
+          Color Images <span className="text-red-500">*</span>
         </label>
         <div className="flex gap-2 flex-wrap">
           {imgState.existing.map((url, i) => (
@@ -423,23 +473,46 @@ function ColorVariantBlock({
         </div>
       </div>
 
-      {/* Size mode toggle */}
+      {/* Per-color size toggle (independent of the global toggle) */}
       <div className="flex items-center justify-between bg-blue-50/60 border border-blue-100 rounded-lg px-2.5 py-1.5 mb-2">
         <div>
           <p className="text-xs font-semibold text-gray-700">
-            Has Size / Weight / Height options?
+            Size / Weight / Height options for this color
           </p>
           <p className="text-[10px] text-gray-500">
-            e.g. this color comes in Small, Large, XL separately
+            Turn on to add separate size options for this color.
           </p>
         </div>
         <InputSwitch
           checked={sizeMode}
-          onChange={(e) => (e.value ? enableSizeMode() : disableSizeMode())}
+          onChange={(e) => toggleSizeMode(!!e.value)}
         />
       </div>
 
-      {!sizeMode ? (
+      {sizeMode ? (
+        <div className="space-y-2">
+          {sizeFields.map((sf, si) => (
+            <SizeVariantRow
+              key={sf.id}
+              control={control}
+              register={register}
+              basePath={`variants.${colorIndex}.sizeVariants.${si}`}
+              index={si}
+              onRemove={() => removeSize(si)}
+              canRemove={sizeFields.length > 1}
+              showRemove
+            />
+          ))}
+          <Button
+            type="button"
+            label="Add Size Option"
+            icon="pi pi-plus"
+            size="small"
+            outlined
+            onClick={() => appendSize(buildEmptySizeVariant(getDefaults()))}
+          />
+        </div>
+      ) : (
         <div className="border border-blue-100 rounded-lg p-2 bg-blue-50/30">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div className="space-y-1 min-w-0">
@@ -466,7 +539,7 @@ function ColorVariantBlock({
             </div>
             <div className="space-y-1 min-w-0">
               <label className="text-[10px] font-semibold text-gray-600">
-                Offer Price <span className="text-red-500">*</span>
+                Offer Price
               </label>
               <Controller
                 name={`variants.${colorIndex}.offerPrice` as any}
@@ -482,6 +555,7 @@ function ColorVariantBlock({
                     minFractionDigits={2}
                     maxFractionDigits={2}
                     useGrouping={false}
+                    placeholder="Optional"
                   />
                 )}
               />
@@ -521,29 +595,6 @@ function ColorVariantBlock({
             basePath={`variants.${colorIndex}.packagingDetails`}
           />
         </div>
-      ) : (
-        <div className="space-y-2">
-          {sizeFields.map((sf, si) => (
-            <SizeVariantRow
-              key={sf.id}
-              control={control}
-              register={register}
-              basePath={`variants.${colorIndex}.sizeVariants.${si}`}
-              index={si}
-              onRemove={() => removeSize(si)}
-              canRemove={sizeFields.length > 1}
-              showRemove
-            />
-          ))}
-          <Button
-            type="button"
-            label="Add Size Option"
-            icon="pi pi-plus"
-            size="small"
-            outlined
-            onClick={() => appendSize(buildEmptySizeVariant())}
-          />
-        </div>
       )}
     </div>
   );
@@ -559,8 +610,12 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
   const [currentStockInfo, setCurrentStockInfo] = useState<number | null>(null);
   const isEditMode = !!productId;
 
-  const [hasVariants, setHasVariants] = useState(false);
+  // Both toggles are real state and only change when the user clicks them.
+  // hasColor = color variants on/off
+  // hasSize  = global size/weight/height toggle (per-color toggles don't change it)
   const [hasColor, setHasColor] = useState(false);
+  const [hasSize, setHasSize] = useState(false);
+  const hasVariants = hasColor || hasSize;
 
   const {
     register,
@@ -568,6 +623,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
     control,
     reset,
     setValue,
+    getValues,
     watch,
     formState: { errors },
   } = useForm<ProductFormData>({
@@ -603,7 +659,6 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
     {},
   );
 
-  // Store is kept internally (needed to fetch categories + submit) but never rendered.
   const [stores, setStores] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
@@ -623,6 +678,41 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
   const selectedStoreId = watch("storeId");
 
   const getUiKey = (field: any): string => field?._uiKey || field?.id;
+
+  // ---------- Global values -> pre-fill rows ----------
+  const getDefaults = (): Defaults => ({
+    mrp: getValues("mrp") as any,
+    offerPrice: getValues("offerPrice") as any,
+    openingStock: (getValues("openingStock") as any) ?? 0,
+    sku: (getValues("sku" as any) as any) ?? "",
+  });
+
+  const normalize = (field: string, v: any) =>
+    field === "openingStock" ? (v ?? 0) : isNil(v) ? null : v;
+
+  // Update the global field, then copy the new value into every color / size row
+  // whose value still equals the previous global value (manual edits are kept).
+  const onGlobalChange = (
+    field: "mrp" | "offerPrice" | "openingStock" | "sku",
+    next: any,
+  ) => {
+    const prev = getValues(field as any);
+    setValue(field as any, next, { shouldDirty: true });
+
+    const variants = (getValues("variants") || []) as any[];
+    const same = (a: any) => normalize(field, a) === normalize(field, prev);
+
+    variants.forEach((v, i) => {
+      if (same(v?.[field])) {
+        setValue(`variants.${i}.${field}` as any, next);
+      }
+      (v?.sizeVariants || []).forEach((sv: any, j: number) => {
+        if (same(sv?.[field])) {
+          setValue(`variants.${i}.sizeVariants.${j}.${field}` as any, next);
+        }
+      });
+    });
+  };
 
   const addImageFiles = (files: File[]) => {
     if (!files.length) return;
@@ -706,9 +796,13 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
     });
   };
 
+  // New rows start with the current global values
   const handleAddVariant = () => {
+    const d = getDefaults();
     appendVariant(
-      (hasColor ? buildEmptyColorVariant() : buildEmptySizeVariant()) as any,
+      (hasColor
+        ? buildEmptyColorVariant(hasSize, d)
+        : buildEmptySizeVariant(d)) as any,
     );
   };
 
@@ -723,29 +817,40 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
     });
   };
 
-  const toggleHasVariants = (value: boolean) => {
-    setHasVariants(value);
+  // ---------- Color toggle (keeps the size toggle state) ----------
+  const toggleColor = (value: boolean) => {
+    setColorImages({});
+    const d = getDefaults();
     if (value) {
-      if (variantFields.length === 0) {
-        appendVariant(
-          (hasColor
-            ? buildEmptyColorVariant()
-            : buildEmptySizeVariant()) as any,
-        );
-      }
+      setHasColor(true);
+      replaceVariants([buildEmptyColorVariant(hasSize, d)] as any);
     } else {
-      replaceVariants([]);
-      setColorImages({});
       setHasColor(false);
+      replaceVariants(hasSize ? ([buildEmptySizeVariant(d)] as any) : []);
     }
   };
 
-  const toggleHasColor = (value: boolean) => {
-    setHasColor(value);
-    replaceVariants([
-      (value ? buildEmptyColorVariant() : buildEmptySizeVariant()) as any,
-    ]);
-    setColorImages({});
+  // ---------- Global size toggle ----------
+  // color ON : applies size on/off to every existing color (colors/images stay)
+  // color OFF: plain size variants on/off
+  const toggleSize = (value: boolean) => {
+    setHasSize(value);
+    const d = getDefaults();
+    if (hasColor) {
+      const current = (getValues("variants") || []) as any[];
+      replaceVariants(
+        current.map((v) => ({
+          ...v,
+          sizeVariants: value
+            ? v.sizeVariants?.length
+              ? v.sizeVariants
+              : [buildEmptySizeVariant(d)]
+            : [],
+        })) as any,
+      );
+      return;
+    }
+    replaceVariants(value ? ([buildEmptySizeVariant(d)] as any) : []);
   };
 
   const stopCamera = useCallback(() => {
@@ -911,68 +1016,84 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
         ? product.variants
         : [];
       const productHasColor = rawVariants.some((v) => v && v.color);
-      const productHasVariants = rawVariants.length > 0;
+      const isSized = (v: any) =>
+        Array.isArray(v?.sizeVariants) && v.sizeVariants.length > 0;
 
-      setHasVariants(productHasVariants);
       setHasColor(productHasColor);
+      // initial global size state (after this only the user changes it)
+      setHasSize(
+        productHasColor
+          ? rawVariants.length > 0 && rawVariants.every(isSized)
+          : rawVariants.length > 0,
+      );
 
-      if (!productHasVariants) {
+      if (rawVariants.length === 0) {
         setValue("mrp", product.mrp ?? 0);
-        setValue("offerPrice", product.offerPrice ?? 0);
+        setValue("offerPrice", product.offerPrice ?? undefined);
         setValue("openingStock", product.openingStock ?? 0);
         setCurrentStockInfo(product.currentStock ?? null);
         replaceVariants([]);
-      } else if (productHasColor) {
-        const uiKeys = rawVariants.map(() => genUiKey());
-
-        replaceVariants(
-          rawVariants.map((v: any, idx: number) => ({
-            _uiKey: uiKeys[idx],
-            color: v.color || "",
-            mrp: v.mrp,
-            offerPrice: v.offerPrice,
-            openingStock: v.openingStock ?? 0,
-            sku: v.sku || "",
-            packagingDetails: v.packagingDetails || {},
-            sizeVariants: Array.isArray(v.sizeVariants)
-              ? v.sizeVariants.map((sv: any) => ({
-                  size: sv.size || "",
-                  weight: sv.weight || "",
-                  height: sv.height || "",
-                  mrp: sv.mrp,
-                  offerPrice: sv.offerPrice,
-                  openingStock: sv.openingStock ?? 0,
-                  sku: sv.sku || "",
-                  packagingDetails: sv.packagingDetails || {},
-                }))
-              : [],
-          })) as any,
-        );
-
-        setColorImages(() => {
-          const next: Record<string, ImageState> = {};
-          rawVariants.forEach((v: any, idx: number) => {
-            next[uiKeys[idx]] = {
-              existing: Array.isArray(v.images) ? v.images : [],
-              files: [],
-              previews: [],
-            };
-          });
-          return next;
-        });
       } else {
-        replaceVariants(
-          rawVariants.map((v: any) => ({
-            size: v.size || "",
-            weight: v.weight || "",
-            height: v.height || "",
-            mrp: v.mrp,
-            offerPrice: v.offerPrice,
-            openingStock: v.openingStock ?? 0,
-            sku: v.sku || "",
-            packagingDetails: v.packagingDetails || {},
-          })),
-        );
+        // global values start from the first row
+        const first = rawVariants[0];
+        const firstRow = isSized(first) ? first.sizeVariants[0] : first;
+        setValue("mrp", firstRow?.mrp ?? undefined);
+        setValue("offerPrice", firstRow?.offerPrice ?? undefined);
+        setValue("openingStock", firstRow?.openingStock ?? 0);
+        setValue("sku" as any, (firstRow?.sku || "") as any);
+
+        if (productHasColor) {
+          const uiKeys = rawVariants.map(() => genUiKey());
+
+          replaceVariants(
+            rawVariants.map((v: any, idx: number) => ({
+              _uiKey: uiKeys[idx],
+              color: v.color || "",
+              mrp: v.mrp ?? undefined,
+              offerPrice: v.offerPrice ?? undefined,
+              openingStock: v.openingStock ?? 0,
+              sku: v.sku || "",
+              packagingDetails: v.packagingDetails || {},
+              sizeVariants: isSized(v)
+                ? v.sizeVariants.map((sv: any) => ({
+                    size: sv.size || "",
+                    weight: sv.weight || "",
+                    height: sv.height || "",
+                    mrp: sv.mrp,
+                    offerPrice: sv.offerPrice,
+                    openingStock: sv.openingStock ?? 0,
+                    sku: sv.sku || "",
+                    packagingDetails: sv.packagingDetails || {},
+                  }))
+                : [],
+            })) as any,
+          );
+
+          setColorImages(() => {
+            const next: Record<string, ImageState> = {};
+            rawVariants.forEach((v: any, idx: number) => {
+              next[uiKeys[idx]] = {
+                existing: Array.isArray(v.images) ? v.images : [],
+                files: [],
+                previews: [],
+              };
+            });
+            return next;
+          });
+        } else {
+          replaceVariants(
+            rawVariants.map((v: any) => ({
+              size: v.size || "",
+              weight: v.weight || "",
+              height: v.height || "",
+              mrp: v.mrp,
+              offerPrice: v.offerPrice,
+              openingStock: v.openingStock ?? 0,
+              sku: v.sku || "",
+              packagingDetails: v.packagingDetails || {},
+            })),
+          );
+        }
       }
 
       setProductCode(product.productCode || "");
@@ -1004,8 +1125,6 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
       const res = await axiosInstance.get("/api/register/user-based-stores");
       const list = res.data?.stores || [];
       setStores(list);
-      // ---------- FIX: store dropdown ekhon UI-te dekhano hoy na, tai create mode-e
-      // prothom store-take always auto-select kore deoya hocche ----------
       if (list.length > 0 && !isEditMode) setValue("storeId", list[0]._id);
     } catch (err: any) {
       toast.error(err?.response?.data?.message || "Failed to fetch stores");
@@ -1027,62 +1146,86 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
     }
   };
 
-  const validateForm = (data: ProductFormData): string | null => {
-    if (!hasVariants) {
-      if (data.mrp === undefined || data.mrp === null) return "MRP is required";
-      if (data.offerPrice === undefined || data.offerPrice === null)
-        return "Offer price is required";
-      if (Number(data.offerPrice) > Number(data.mrp))
-        return "Offer price cannot be greater than MRP";
-      return null;
+  // ---------- Validation ----------
+  const priceError = (label: string, mrp: any, offer: any): string | null => {
+    if (isNil(mrp)) return `${label}MRP is required`;
+    if (!isNil(offer) && Number(offer) > Number(mrp))
+      return `${label}Offer price cannot be greater than MRP`;
+    return null;
+  };
+
+  const validateSizeRow = (label: string, sv: any): string | null => {
+    if (!hasAttribute(sv))
+      return `${label}enter at least one of Size, Weight or Height`;
+    return priceError(label, sv.mrp, sv.offerPrice);
+  };
+
+  const validateForm = (): string | null => {
+    // validate the real form values (not zod-parsed data)
+    const values = getValues();
+    const variants = (values.variants || []) as any[];
+
+    // ---- Images ----
+    if (!hasColor && existingImages.length + imageFiles.length === 0) {
+      return "Product image is required. Add at least one image in the 'Product Images' section.";
     }
 
-    const variants = (data.variants || []) as any[];
+    // ---- Simple product ----
+    if (!hasVariants) {
+      return priceError("", values.mrp, values.offerPrice);
+    }
+
     if (!variants.length) return "At least one variant is required";
 
+    // ---- Color mode ----
     if (hasColor) {
       for (let i = 0; i < variants.length; i++) {
         const v = variants[i];
-        if (!v.color) return `Color ${i + 1}: color name is required`;
-        if (Array.isArray(v.sizeVariants) && v.sizeVariants.length > 0) {
-          for (let j = 0; j < v.sizeVariants.length; j++) {
-            const sv = v.sizeVariants[j];
-            if (sv.mrp === undefined || sv.offerPrice === undefined)
-              return `Color ${i + 1} - Size ${j + 1}: MRP and Offer price are required`;
-            if (Number(sv.offerPrice) > Number(sv.mrp))
-              return `Color ${i + 1} - Size ${j + 1}: Offer price cannot be greater than MRP`;
+        const label = `Color ${i + 1}: `;
+        if (!String(v.color ?? "").trim())
+          return `${label}color name is required`;
+
+        const imgs = getColorImageState(getUiKey(variantFields[i]));
+        if (imgs.existing.length + imgs.files.length === 0)
+          return `${label}at least one image is required`;
+
+        const sizeRows = Array.isArray(v.sizeVariants) ? v.sizeVariants : [];
+
+        if (sizeRows.length > 0) {
+          const rows = sizeRows.filter((sv: any) => !isEmptySizeVariant(sv));
+          if (!rows.length)
+            return `${label}fill a size option or turn its size toggle off`;
+          for (let j = 0; j < rows.length; j++) {
+            const err = validateSizeRow(
+              `Color ${i + 1} - Size ${j + 1}: `,
+              rows[j],
+            );
+            if (err) return err;
           }
         } else {
-          if (v.mrp === undefined || v.offerPrice === undefined)
-            return `Color ${i + 1}: MRP and Offer price are required`;
-          if (Number(v.offerPrice) > Number(v.mrp))
-            return `Color ${i + 1}: Offer price cannot be greater than MRP`;
+          const err = priceError(label, v.mrp, v.offerPrice);
+          if (err) return err;
         }
       }
-    } else {
-      for (let i = 0; i < variants.length; i++) {
-        const v = variants[i];
-        if (v.mrp === undefined || v.offerPrice === undefined)
-          return `Variant ${i + 1}: MRP and Offer price are required`;
-        if (Number(v.offerPrice) > Number(v.mrp))
-          return `Variant ${i + 1}: Offer price cannot be greater than MRP`;
-      }
+      return null;
+    }
+
+    // ---- Plain size/weight/height variants ----
+    for (let i = 0; i < variants.length; i++) {
+      const err = validateSizeRow(`Variant ${i + 1}: `, variants[i]);
+      if (err) return err;
     }
     return null;
   };
 
-  const isEmptySizeVariant = (v: any) => {
-    const hasText = v.size || v.weight || v.height || v.sku;
-    const hasPricing =
-      v.mrp !== undefined &&
-      v.mrp !== null &&
-      v.offerPrice !== undefined &&
-      v.offerPrice !== null;
-    return !hasText && !hasPricing;
+  // if the zod resolver blocks the submit, show the reason
+  const onInvalid = (errs: any) => {
+    console.log("Form validation errors:", errs);
+    toast.error(firstErrorMessage(errs) || "Please check the form fields");
   };
 
   const onSubmit = async (data: ProductFormData) => {
-    const validationError = validateForm(data);
+    const validationError = validateForm();
     if (validationError) {
       toast.error(validationError);
       return;
@@ -1098,6 +1241,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
       formData.append("name", data.name || "");
       formData.append("description", data.description || "");
       formData.append("unit", data.unit || "");
+      formData.append("hasColor", String(hasColor));
 
       if (!isEditMode && data.storeId)
         formData.append("storeId", String(data.storeId));
@@ -1107,17 +1251,19 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
       existingImages.forEach((url) => formData.append("images", url));
       imageFiles.forEach((file, idx) => formData.append(`image${idx}`, file));
 
+      // real form values
+      const values = getValues();
+      const globalPackaging = values.packagingDetails || {};
+
       if (!hasVariants) {
-        formData.append("mrp", String(data.mrp ?? 0));
-        formData.append("offerPrice", String(data.offerPrice ?? 0));
-        formData.append("openingStock", String(data.openingStock ?? 0));
-        formData.append(
-          "packagingDetails",
-          JSON.stringify(data.packagingDetails || {}),
-        );
+        formData.append("mrp", String(values.mrp ?? 0));
+        if (!isNil(values.offerPrice))
+          formData.append("offerPrice", String(values.offerPrice));
+        formData.append("openingStock", String(values.openingStock ?? 0));
+        formData.append("packagingDetails", JSON.stringify(globalPackaging));
         formData.append("variants", JSON.stringify([]));
       } else {
-        const variants = (data.variants || []) as any[];
+        const variants = (values.variants || []) as any[];
 
         const variantsPayload = variants.map((v, idx) => {
           const uiKey = getUiKey(variantFields[idx]);
@@ -1126,33 +1272,45 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
             : { existing: [] as string[] };
 
           if (hasColor) {
-            const cleanSizeVariants = Array.isArray(v.sizeVariants)
+            const sizeRows = Array.isArray(v.sizeVariants)
               ? v.sizeVariants.filter((sv: any) => !isEmptySizeVariant(sv))
               : [];
+            const color = String(v.color || "").trim() || undefined;
 
+            // color + size options
+            if (sizeRows.length > 0) {
+              return {
+                color,
+                images: imgState.existing,
+                packagingDetails: packagingOf(
+                  v.packagingDetails,
+                  globalPackaging,
+                ),
+                sizeVariants: sizeRows.map((sv: any) => ({
+                  size: sv.size || undefined,
+                  weight: sv.weight || undefined,
+                  height: sv.height || undefined,
+                  mrp: sv.mrp,
+                  offerPrice: isNil(sv.offerPrice) ? undefined : sv.offerPrice,
+                  openingStock: sv.openingStock ?? 0,
+                  sku: sv.sku || undefined,
+                  packagingDetails: packagingOf(
+                    sv.packagingDetails,
+                    globalPackaging,
+                  ),
+                })),
+              };
+            }
+
+            // color without sizes
             return {
-              color: v.color || undefined,
+              color,
               images: imgState.existing,
-              packagingDetails: v.packagingDetails || {},
-              ...(cleanSizeVariants.length > 0
-                ? {
-                    sizeVariants: cleanSizeVariants.map((sv: any) => ({
-                      size: sv.size || undefined,
-                      weight: sv.weight || undefined,
-                      height: sv.height || undefined,
-                      mrp: sv.mrp,
-                      offerPrice: sv.offerPrice,
-                      openingStock: sv.openingStock ?? 0,
-                      sku: sv.sku || undefined,
-                      packagingDetails: sv.packagingDetails || {},
-                    })),
-                  }
-                : {
-                    mrp: v.mrp,
-                    offerPrice: v.offerPrice,
-                    openingStock: v.openingStock ?? 0,
-                    sku: v.sku || undefined,
-                  }),
+              mrp: v.mrp,
+              offerPrice: isNil(v.offerPrice) ? undefined : v.offerPrice,
+              openingStock: v.openingStock ?? 0,
+              sku: v.sku || undefined,
+              packagingDetails: packagingOf(v.packagingDetails, globalPackaging),
             };
           }
 
@@ -1161,10 +1319,10 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
             weight: v.weight || undefined,
             height: v.height || undefined,
             mrp: v.mrp,
-            offerPrice: v.offerPrice,
+            offerPrice: isNil(v.offerPrice) ? undefined : v.offerPrice,
             openingStock: v.openingStock ?? 0,
             sku: v.sku || undefined,
-            packagingDetails: v.packagingDetails || {},
+            packagingDetails: packagingOf(v.packagingDetails, globalPackaging),
           };
         });
 
@@ -1200,8 +1358,11 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
       setColorImages({});
       onSuccess();
     } catch (error: any) {
+      const apiErrors = error.response?.data?.errors;
+      console.log("Product save error:", error.response?.data);
       toast.error(
-        error.response?.data?.message ||
+        (Array.isArray(apiErrors) && apiErrors[0]?.message) ||
+          error.response?.data?.message ||
           `Failed to ${isEditMode ? "update" : "create"} product`,
       );
     } finally {
@@ -1219,7 +1380,10 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
 
   return (
     <div className="px-4 pt-2 pb-3 min-h-[80vh]">
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
+      <form
+        onSubmit={handleSubmit(onSubmit, onInvalid)}
+        className="space-y-3"
+      >
         {isEditMode && productCode && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-1.5 flex items-center gap-2 flex-wrap">
             <i className="pi pi-hashtag text-blue-500"></i>
@@ -1242,7 +1406,6 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
             Basic Information
           </h3>
 
-          {/* Category first, then Product Name, then Unit — Store is intentionally hidden */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
             <div className="space-y-1">
               <label className="text-sm font-semibold text-gray-700">
@@ -1342,11 +1505,18 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
           </div>
         </div>
 
-        {/* Main Product Images */}
+        {/* Main Product Images: required when color is off, optional when on */}
         <div className="space-y-1.5">
           <h4 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
             <i className="pi pi-image text-blue-600"></i>
             Product Images
+            {!hasColor ? (
+              <span className="text-red-500">*</span>
+            ) : (
+              <span className="text-xs font-normal text-gray-500">
+                (optional — add images inside each color)
+              </span>
+            )}
           </h4>
 
           {(existingImages.length > 0 || imagePreviews.length > 0) && (
@@ -1411,124 +1581,141 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
           </div>
         </div>
 
-        {/* VARIANT MODE TOGGLES */}
+        {/* VARIANT TOGGLES — independent */}
         <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-2.5 space-y-2.5">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-semibold text-gray-800">
-                This product has variants
+                Color variants
               </p>
               <p className="text-xs text-gray-500">
-                Turn on if this product needs Size / Weight / Height / Color
-                options
+                Each color gets its own images. Size / Weight not required.
               </p>
             </div>
             <InputSwitch
-              checked={hasVariants}
-              onChange={(e) => toggleHasVariants(e.value)}
+              checked={hasColor}
+              onChange={(e) => toggleColor(!!e.value)}
             />
           </div>
 
-          {hasVariants && (
-            <div className="flex items-center justify-between border-t border-blue-200 pt-2.5">
-              <div>
-                <p className="text-sm font-semibold text-gray-800">
-                  Use Color as base variant
-                </p>
-                <p className="text-xs text-gray-500">
-                  Off = plain Size/Weight/Height variants. On = group by color,
-                  each color can have its own sizes.
-                </p>
-              </div>
-              <InputSwitch
-                checked={hasColor}
-                onChange={(e) => toggleHasColor(e.value)}
-              />
+          <div className="flex items-center justify-between border-t border-blue-200 pt-2.5">
+            <div>
+              <p className="text-sm font-semibold text-gray-800">
+                Size / Weight / Height variants
+              </p>
+              <p className="text-xs text-gray-500">
+                {hasColor
+                  ? "Shortcut: turn size options on or off for all colors at once. You can also enable them for individual colors inside each color block."
+                  : "Plain variants with different size / weight / height."}
+              </p>
             </div>
-          )}
+            <InputSwitch
+              checked={hasSize}
+              onChange={(e) => toggleSize(!!e.value)}
+            />
+          </div>
         </div>
 
-        {/* SIMPLE MODE PRICING */}
-        {!hasVariants && (
-          <div className="space-y-2">
-            <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
-              <span className="text-blue-600 text-base">₹</span>
-              Pricing &amp; Stock
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-gray-700">
-                  MRP <span className="text-red-500">*</span>
-                </label>
-                <Controller
-                  name="mrp"
-                  control={control}
-                  render={({ field: f }) => (
-                    <InputNumber
-                      value={f.value ?? null}
-                      onValueChange={(e) => f.onChange(e.value)}
-                      placeholder="MRP"
-                      min={0}
-                      className="w-full"
-                      inputClassName="w-full"
-                      useGrouping={false}
-                      mode="decimal"
-                      minFractionDigits={2}
-                      maxFractionDigits={2}
-                    />
-                  )}
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-gray-700">
-                  Offer Price <span className="text-red-500">*</span>
-                </label>
-                <Controller
-                  name="offerPrice"
-                  control={control}
-                  render={({ field: f }) => (
-                    <InputNumber
-                      value={f.value ?? null}
-                      onValueChange={(e) => f.onChange(e.value)}
-                      placeholder="Offer price"
-                      min={0}
-                      className="w-full"
-                      inputClassName="w-full"
-                      useGrouping={false}
-                      mode="decimal"
-                      minFractionDigits={2}
-                      maxFractionDigits={2}
-                    />
-                  )}
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-gray-700">
-                  Opening Stock
-                </label>
-                <Controller
-                  name="openingStock"
-                  control={control}
-                  render={({ field: f }) => (
-                    <InputNumber
-                      value={f.value ?? 0}
-                      onValueChange={(e) => f.onChange(e.value)}
-                      placeholder="Opening stock"
-                      min={0}
-                      className="w-full"
-                      inputClassName="w-full"
-                      useGrouping={false}
-                    />
-                  )}
-                />
-              </div>
+        {/* PRICING & STOCK: values entered here fill every variant below */}
+        <div className="space-y-2">
+          <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+            <span className="text-blue-600 text-base">₹</span>
+            Pricing &amp; Stock
+          </h3>
+          {hasVariants && (
+            <p className="text-xs text-gray-500">
+              These values are filled into every variant below. You can still
+              change them in any individual variant.
+            </p>
+          )}
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-4">
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-gray-700">
+                MRP{" "}
+                {!hasVariants && <span className="text-red-500">*</span>}
+              </label>
+              <Controller
+                name="mrp"
+                control={control}
+                render={({ field: f }) => (
+                  <InputNumber
+                    value={f.value ?? null}
+                    onValueChange={(e) => onGlobalChange("mrp", e.value)}
+                    placeholder="MRP"
+                    min={0}
+                    className="w-full"
+                    inputClassName="w-full"
+                    useGrouping={false}
+                    mode="decimal"
+                    minFractionDigits={2}
+                    maxFractionDigits={2}
+                  />
+                )}
+              />
             </div>
-            <PackagingFieldsBlock
-              control={control}
-              basePath="packagingDetails"
-            />
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-gray-700">
+                Offer Price
+              </label>
+              <Controller
+                name="offerPrice"
+                control={control}
+                render={({ field: f }) => (
+                  <InputNumber
+                    value={f.value ?? null}
+                    onValueChange={(e) => onGlobalChange("offerPrice", e.value)}
+                    placeholder="Optional"
+                    min={0}
+                    className="w-full"
+                    inputClassName="w-full"
+                    useGrouping={false}
+                    mode="decimal"
+                    minFractionDigits={2}
+                    maxFractionDigits={2}
+                  />
+                )}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-gray-700">
+                Opening Stock
+              </label>
+              <Controller
+                name="openingStock"
+                control={control}
+                render={({ field: f }) => (
+                  <InputNumber
+                    value={f.value ?? 0}
+                    onValueChange={(e) =>
+                      onGlobalChange("openingStock", e.value ?? 0)
+                    }
+                    placeholder="Opening stock"
+                    min={0}
+                    className="w-full"
+                    inputClassName="w-full"
+                    useGrouping={false}
+                  />
+                )}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-gray-700">SKU</label>
+              <Controller
+                name={"sku" as any}
+                control={control}
+                render={({ field: f }) => (
+                  <InputText
+                    className="w-full"
+                    value={(f.value as string) ?? ""}
+                    onChange={(e) => onGlobalChange("sku", e.target.value)}
+                    placeholder="Optional"
+                  />
+                )}
+              />
+            </div>
           </div>
-        )}
+          <PackagingFieldsBlock control={control} basePath="packagingDetails" />
+        </div>
 
         {/* VARIANT MODE */}
         {hasVariants && (
@@ -1570,6 +1757,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
                         removeColorImage(uiKey, i, isExisting)
                       }
                       onOpenCamera={() => openCamera(uiKey)}
+                      getDefaults={getDefaults}
                     />
                   </div>
                 ) : (
