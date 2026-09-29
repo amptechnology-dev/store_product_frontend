@@ -34,6 +34,8 @@ const ALLOWED_TYPES = [
   "video/quicktime",
 ];
 const VIDEO_URL_REGEX = /\.(mp4|webm|mov)(\?.*)?$/i;
+const isValidObjectId = (id?: string | null) =>
+  !!id && /^[a-fA-F0-9]{24}$/.test(id);
 
 function MediaBox({
   src,
@@ -81,6 +83,7 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
     control,
     reset,
     setValue,
+    watch,
     formState: { errors },
   } = useForm<BannerFormData>({
     resolver: zodResolver(
@@ -89,6 +92,7 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
     defaultValues: {
       name: "",
       storeId: undefined,
+      categoryId: undefined,
       bannerURL: "",
     },
   });
@@ -100,6 +104,10 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
     null,
   );
   const [stores, setStores] = useState<any[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(false);
+
+  const selectedStoreId = watch("storeId");
 
   // object URL memory leak roke
   useEffect(() => {
@@ -142,6 +150,16 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bannerId]);
 
+  // store select hole oi store er category load
+  useEffect(() => {
+    if (isValidObjectId(selectedStoreId)) {
+      fetchCategories(selectedStoreId as string);
+    } else {
+      setCategories([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStoreId]);
+
   const fetchBannerData = async () => {
     try {
       setLoading(true);
@@ -166,6 +184,12 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
           ? banner.storeId?._id
           : banner.storeId;
       if (storeId) setValue("storeId", storeId);
+
+      const categoryId =
+        typeof banner.categoryId === "object"
+          ? banner.categoryId?._id
+          : banner.categoryId;
+      setValue("categoryId", categoryId || null);
     } catch (error: any) {
       toast.error(
         error.response?.data?.message || "Failed to fetch banner data",
@@ -191,6 +215,21 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
     }
   };
 
+  const fetchCategories = async (storeId: string) => {
+    try {
+      setCategoriesLoading(true);
+      const res = await axiosInstance.get("/api/category", {
+        params: { storeId },
+      });
+      setCategories(res.data?.categories || []);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "Failed to fetch categories");
+      setCategories([]);
+    } finally {
+      setCategoriesLoading(false);
+    }
+  };
+
   const onSubmit = async (data: BannerFormData) => {
     // create e to lagbei, edit e existing remove kore notun na dile o lagbe
     if (!mediaFile && !existingMedia) {
@@ -211,6 +250,9 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
       if (!isEditMode && data.storeId) {
         formData.append("storeId", String(data.storeId));
       }
+
+      // category optional: khali ("") pathale backend e category remove / nai hisebe dhore
+      formData.append("categoryId", data.categoryId ? String(data.categoryId) : "");
 
       if (mediaFile) {
         formData.append("media", mediaFile);
@@ -280,7 +322,7 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
               )}
             </div>
 
-            <div className="space-y-1">
+            {/* <div className="space-y-1">
               <label className="text-sm font-semibold text-gray-700">
                 Store <span className="text-red-500">*</span>
               </label>
@@ -299,13 +341,59 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
                     placeholder="Select store"
                     className="w-full"
                     disabled={isEditMode}
-                    onChange={(e) => field.onChange(e.value)}
+                    onChange={(e) => {
+                      field.onChange(e.value);
+                      // store change hole ager category ar valid na
+                      setValue("categoryId", null);
+                    }}
                   />
                 )}
               />
               {errors.storeId && (
                 <small className="text-red-500">
                   {errors.storeId.message as string}
+                </small>
+              )}
+            </div> */}
+
+            <div className="space-y-1">
+              <label className="text-sm font-semibold text-gray-700">
+                Category{" "}
+                <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              <Controller
+                name="categoryId"
+                control={control}
+                render={({ field }) => (
+                  <Dropdown
+                    value={field.value || null}
+                    options={categories.map((c) => ({
+                      label: c.name,
+                      value: c._id,
+                    }))}
+                    optionLabel="label"
+                    optionValue="value"
+                    placeholder={
+                      !isValidObjectId(selectedStoreId)
+                        ? "Select store first"
+                        : categoriesLoading
+                          ? "Loading categories..."
+                          : categories.length === 0
+                            ? "No categories found"
+                            : "Select category"
+                    }
+                    className="w-full"
+                    showClear
+                    disabled={
+                      !isValidObjectId(selectedStoreId) || categoriesLoading
+                    }
+                    onChange={(e) => field.onChange(e.value ?? null)}
+                  />
+                )}
+              />
+              {errors.categoryId && (
+                <small className="text-red-500">
+                  {errors.categoryId.message as string}
                 </small>
               )}
             </div>
@@ -373,7 +461,7 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
               onClick={() => fileInputRef.current?.click()}
             />
           )}
-          {/* replace button er jonno hidden input (upload input hidden thakle eta kaj kore) */}
+          {/* replace button er jonno hidden input */}
           {!showUploadInput && (
             <input
               ref={fileInputRef}

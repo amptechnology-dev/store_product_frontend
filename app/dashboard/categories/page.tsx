@@ -168,13 +168,13 @@ function Page() {
   const header = (
     <div
       className="flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-center p-2 sm:p-3 rounded-lg"
-      style={{ background: "linear-gradient(120deg,#f3be27,#e4a90e)" }}
+      style={{ background: "linear-gradient(120deg,#3b82f6,#1d4ed8)" }}
     >
       <div className="min-w-0">
-        <h2 className="text-sm sm:text-base font-semibold text-gray-800">
+        <h2 className="text-sm sm:text-base font-semibold text-white">
           Categories
         </h2>
-        <p className="text-xs text-gray-700">Manage your store categories</p>
+        <p className="text-xs text-blue-100">Manage your store categories</p>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-1 sm:gap-2 items-stretch sm:items-center w-full sm:w-auto">
@@ -202,8 +202,8 @@ function Page() {
             className="w-full sm:w-auto"
             style={{
               background: "#fff",
-              color: "#d89f00",
-              border: "1px solid #e0ac1f",
+              color: "#1d4ed8",
+              border: "1px solid #93c5fd",
             }}
           />
         )}
@@ -215,8 +215,8 @@ function Page() {
           className="w-full sm:w-auto"
           style={{
             background: "#fff",
-            color: "#d89f00",
-            border: "1px solid #e0ac1f",
+            color: "#1d4ed8",
+            border: "1px solid #93c5fd",
           }}
         />
       </div>
@@ -231,7 +231,7 @@ function Page() {
         {filteredCategories.length === 0 && !loading && <EmptyState />}
 
         {filteredCategories.length > 0 && (
-          <div className="mt-3 overflow-hidden rounded-lg border border-gray-200">
+          <div className="mt-3 overflow-hidden rounded-lg border border-blue-100">
             <DataTable
               value={filteredCategories}
               loading={loading}
@@ -298,9 +298,9 @@ function Page() {
                           setVisible(true);
                         }}
                         style={{
-                          background: "#ffcf00",
-                          color: "#1d232f",
-                          border: "1px solid #e0ac1f",
+                          background: "#eff6ff",
+                          color: "#1d4ed8",
+                          border: "1px solid #bfdbfe",
                           padding: "6px 10px",
                         }}
                       />
@@ -320,7 +320,7 @@ function Page() {
 
         <Dialog
           header={
-            <div className="flex items-center gap-3 bg-gradient-to-r from-blue-500 to-indigo-600 mb-2 p-3 rounded-t-lg">
+            <div className="flex items-center gap-3 bg-gradient-to-r from-blue-500 to-blue-600 mb-2 p-3 rounded-t-lg">
               <div className="bg-white/20 backdrop-blur-sm p-2 rounded-lg">
                 <i className="pi pi-tag text-white text-xl"></i>
               </div>

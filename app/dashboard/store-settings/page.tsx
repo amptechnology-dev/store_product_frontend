@@ -74,91 +74,149 @@ function StoreSettingsPage() {
   };
 
   return (
-    <div className="w-full h-screen bg-gray-50 flex justify-center px-4 py-4 overflow-hidden">
-      <div className="w-full max-w-5xl">
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          {/* Header */}
-          <div
-            className="flex items-center gap-4 px-6 py-4 sm:px-8 sm:py-5"
-            style={{ background: "linear-gradient(120deg,#f3be27,#e4a90e)" }}
-          >
-            <div className="w-10 h-10 rounded-xl bg-white/25 flex items-center justify-center flex-shrink-0">
-              <i className="pi pi-cog text-xl text-gray-900"></i>
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-gray-900">
-                Store Settings
-              </h2>
-              <p className="text-xs text-gray-800/80 mt-0.5">
-                Control stock behavior for your products
-              </p>
-            </div>
+    <div className="w-full flex justify-start items-start pt-2">
+      <div className="w-full bg-white rounded-lg shadow p-2 sm:p-4">
+        {/* Header */}
+        <div
+          className="flex items-center gap-3 p-2 sm:p-3 rounded-lg"
+          style={{ background: "linear-gradient(120deg,#3b82f6,#1d4ed8)" }}
+        >
+          <div className="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center flex-shrink-0">
+            <i className="pi pi-cog text-xl text-white"></i>
           </div>
-
-          <div className="p-5 sm:p-6">
-            {stores.length > 1 && (
-              <div className="mb-4 space-y-1.5">
-                <label className="text-sm font-semibold text-gray-700">
-                  Select Store
-                </label>
-                <Dropdown
-                  value={storeId}
-                  options={stores.map((s) => ({
-                    label: s.storeName,
-                    value: s._id,
-                  }))}
-                  optionLabel="label"
-                  optionValue="value"
-                  onChange={(e) => setStoreId(e.value)}
-                  className="w-full"
-                />
-              </div>
-            )}
-
-            {loading ? (
-              <div className="flex flex-col justify-center items-center py-10 gap-3">
-                <i className="pi pi-spin pi-spinner text-3xl text-amber-500"></i>
-                <p className="text-sm text-gray-400">Loading settings...</p>
-              </div>
-            ) : (
-              <div className="flex items-center justify-between gap-4 border border-gray-200 rounded-xl p-3 hover:border-gray-300 hover:shadow-sm transition-all">
-                <div className="flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0">
-                    <i className="pi pi-box text-indigo-600 text-base"></i>
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-gray-800">
-                      Stock Management
-                    </p>
-                    <p className="text-xs text-gray-500 mt-0.5 leading-relaxed max-w-xl">
-                      ON: product add/edit e Opening Stock ar Low Stock Alert
-                      dekhabe (variant e o), ar cart/order e stock check hoye
-                      stock minus hobe. OFF: kothao stock deoya jabe na, ar
-                      stock niye kono check ba minus hobe na.
-                    </p>
-                  </div>
-                </div>
-                <InputSwitch
-                  checked={stockEnabled}
-                  onChange={(e) => handleToggle(!!e.value)}
-                  disabled={saving || !storeId}
-                />
-              </div>
-            )}
-
-            <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 flex gap-3">
-              <i className="pi pi-info-circle mt-0.5 flex-shrink-0"></i>
-              <span className="leading-relaxed">
-                This setting is saved on each product when it is created.
-                Changing it later will not affect products that were already
-                created.
-              </span>
-            </div>
+          <div className="min-w-0">
+            <h2 className="text-sm sm:text-base font-semibold text-white">
+              Store Settings
+            </h2>
+            <p className="text-xs text-blue-100">
+              Control stock behavior for your products
+            </p>
           </div>
         </div>
-      </div>
 
-      <ToastContainer position="top-right" />
+        <div className="p-2 sm:p-3 mt-2 space-y-4">
+          {stores.length > 1 && (
+            <div className="space-y-1.5 max-w-sm">
+              <label className="text-sm font-semibold text-gray-700">
+                Select Store
+              </label>
+              <Dropdown
+                value={storeId}
+                options={stores.map((s) => ({
+                  label: s.storeName,
+                  value: s._id,
+                }))}
+                optionLabel="label"
+                optionValue="value"
+                onChange={(e) => setStoreId(e.value)}
+                className="w-full"
+              />
+            </div>
+          )}
+
+          {loading ? (
+            <div className="flex flex-col justify-center items-center py-10 gap-3">
+              <i className="pi pi-spin pi-spinner text-3xl text-blue-500"></i>
+              <p className="text-sm text-gray-400">Loading settings...</p>
+            </div>
+          ) : (
+            <>
+              {/* Toggle card */}
+              <div className="rounded-xl border border-blue-100 overflow-hidden">
+                <div className="flex items-center justify-between gap-4 p-3 sm:p-4 bg-blue-50/50">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+                      <i className="pi pi-box text-blue-600 text-lg"></i>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-semibold text-gray-800">
+                          Stock Management
+                        </p>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                            stockEnabled
+                              ? "bg-green-100 text-green-800"
+                              : "bg-gray-200 text-gray-600"
+                          }`}
+                        >
+                          {stockEnabled ? "ON" : "OFF"}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Track stock for products and variants
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {saving && (
+                      <i className="pi pi-spin pi-spinner text-blue-500 text-sm"></i>
+                    )}
+                    <InputSwitch
+                      checked={stockEnabled}
+                      onChange={(e) => handleToggle(!!e.value)}
+                      disabled={saving || !storeId}
+                    />
+                  </div>
+                </div>
+
+                {/* ON / OFF explanation */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 sm:p-4 bg-white">
+                  <div
+                    className={`rounded-lg border p-3 transition-all ${
+                      stockEnabled
+                        ? "border-green-300 bg-green-50"
+                        : "border-gray-200 bg-white"
+                    }`}
+                  >
+                    <p className="text-xs font-semibold text-green-700 flex items-center gap-1.5 mb-1.5">
+                      <i className="pi pi-check-circle"></i> When ON
+                    </p>
+                    <ul className="text-xs text-gray-600 space-y-1 list-disc pl-4 leading-relaxed">
+                      <li>
+                        Opening Stock and Low Stock Alert fields are shown on
+                        products and variants
+                      </li>
+                      <li>Stock is validated at cart and order</li>
+                      <li>Stock is reduced after each order</li>
+                    </ul>
+                  </div>
+
+                  <div
+                    className={`rounded-lg border p-3 transition-all ${
+                      !stockEnabled
+                        ? "border-gray-400 bg-gray-50"
+                        : "border-gray-200 bg-white"
+                    }`}
+                  >
+                    <p className="text-xs font-semibold text-gray-700 flex items-center gap-1.5 mb-1.5">
+                      <i className="pi pi-times-circle"></i> When OFF
+                    </p>
+                    <ul className="text-xs text-gray-600 space-y-1 list-disc pl-4 leading-relaxed">
+                      <li>Stock fields are hidden</li>
+                      <li>No stock validation at cart or order</li>
+                      <li>No stock deduction is applied</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              {/* Info note */}
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800 flex gap-3">
+                <i className="pi pi-info-circle mt-0.5 flex-shrink-0"></i>
+                <span className="leading-relaxed">
+                  This setting is saved on each product when it is created.
+                  Changing it later will not affect products that were already
+                  created.
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+
+        <ToastContainer position="top-right" />
+      </div>
     </div>
   );
 }
