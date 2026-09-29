@@ -6,18 +6,16 @@ import { Dropdown } from "primereact/dropdown";
 import { InputSwitch } from "primereact/inputswitch";
 import { ToastContainer, toast } from "react-toastify";
 import axiosInstance from "@/service/axios.service";
-import { getStoreSettings, updateStoreSettings, StoreSettings } from "@/service/storeSetting.service";
-
-const DEFAULT_SETTINGS: StoreSettings = {
-  hasVariants: false,
-  hasColor: false,
-  hasStockManagement: false,
-};
+import {
+  getStoreSettings,
+  updateStoreSettings,
+} from "@/service/storeSetting.service";
 
 function StoreSettingsPage() {
   const [stores, setStores] = useState<any[]>([]);
   const [storeId, setStoreId] = useState<string | null>(null);
-  const [settings, setSettings] = useState<StoreSettings>(DEFAULT_SETTINGS);
+  // [STOCK] shudhu stock management
+  const [stockEnabled, setStockEnabled] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -44,26 +42,27 @@ function StoreSettingsPage() {
     try {
       setLoading(true);
       const res = await getStoreSettings(id);
-      setSettings(res.data?.settings || DEFAULT_SETTINGS);
+      setStockEnabled(!!res.data?.settings?.hasStockManagement);
     } catch (err: any) {
       toast.error(err?.response?.data?.message || "Failed to fetch settings");
-      setSettings(DEFAULT_SETTINGS);
+      setStockEnabled(false);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleToggle = async (key: keyof StoreSettings, value: boolean) => {
+  const handleToggle = async (value: boolean) => {
     if (!storeId) return;
-    const prev = settings;
-    const next = { ...settings, [key]: value };
-    setSettings(next); // optimistic update
+    const prev = stockEnabled;
+    setStockEnabled(value); // optimistic update
     try {
       setSaving(true);
-      await updateStoreSettings(storeId, { [key]: value });
+      await updateStoreSettings(storeId, { hasStockManagement: value });
       toast.success("Settings updated successfully");
+      // [STOCK] sidebar er "Stock Management" menu refresh korar jonno
+      window.dispatchEvent(new Event("storeSettingsChanged"));
     } catch (err: any) {
-      setSettings(prev); // revert on failure
+      setStockEnabled(prev); // revert on failure
       if (axios.isAxiosError(err)) {
         toast.error(err.response?.data?.message || "Failed to update settings");
       } else {
@@ -73,27 +72,6 @@ function StoreSettingsPage() {
       setSaving(false);
     }
   };
-
-  const settingRows: { key: keyof StoreSettings; title: string; desc: string; icon: string }[] = [
-    {
-      key: "hasVariants",
-      title: "Size / Weight / Height Variants",
-      desc: "Enable this to add multiple size, weight, or height based pricing for a product.",
-      icon: "pi pi-sliders-h",
-    },
-    {
-      key: "hasColor",
-      title: "Color Variants",
-      desc: "Enable this to add color-wise variants along with color-specific images.",
-      icon: "pi pi-palette",
-    },
-    {
-      key: "hasStockManagement",
-      title: "Stock Management",
-      desc: "Enable this to manage stock quantity for each product or variant.",
-      icon: "pi pi-box",
-    },
-  ];
 
   return (
     <div className="w-full h-screen bg-gray-50 flex justify-center px-4 py-4 overflow-hidden">
@@ -108,9 +86,11 @@ function StoreSettingsPage() {
               <i className="pi pi-cog text-xl text-gray-900"></i>
             </div>
             <div>
-              <h2 className="text-lg font-bold text-gray-900">Store Settings</h2>
+              <h2 className="text-lg font-bold text-gray-900">
+                Store Settings
+              </h2>
               <p className="text-xs text-gray-800/80 mt-0.5">
-                Control product variant, color, and stock behavior
+                Control stock behavior for your products
               </p>
             </div>
           </div>
@@ -118,10 +98,15 @@ function StoreSettingsPage() {
           <div className="p-5 sm:p-6">
             {stores.length > 1 && (
               <div className="mb-4 space-y-1.5">
-                <label className="text-sm font-semibold text-gray-700">Select Store</label>
+                <label className="text-sm font-semibold text-gray-700">
+                  Select Store
+                </label>
                 <Dropdown
                   value={storeId}
-                  options={stores.map((s) => ({ label: s.storeName, value: s._id }))}
+                  options={stores.map((s) => ({
+                    label: s.storeName,
+                    value: s._id,
+                  }))}
                   optionLabel="label"
                   optionValue="value"
                   onChange={(e) => setStoreId(e.value)}
@@ -136,38 +121,37 @@ function StoreSettingsPage() {
                 <p className="text-sm text-gray-400">Loading settings...</p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {settingRows.map((row) => (
-                  <div
-                    key={row.key}
-                    className="flex items-center justify-between gap-4 border border-gray-200 rounded-xl p-3 hover:border-gray-300 hover:shadow-sm transition-all"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0">
-                        <i className={`${row.icon} text-indigo-600 text-base`}></i>
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-gray-800">{row.title}</p>
-                        <p className="text-xs text-gray-500 mt-0.5 leading-relaxed max-w-xl">
-                          {row.desc}
-                        </p>
-                      </div>
-                    </div>
-                    <InputSwitch
-                      checked={!!settings[row.key]}
-                      onChange={(e) => handleToggle(row.key, e.value)}
-                      disabled={saving || !storeId}
-                    />
+              <div className="flex items-center justify-between gap-4 border border-gray-200 rounded-xl p-3 hover:border-gray-300 hover:shadow-sm transition-all">
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0">
+                    <i className="pi pi-box text-indigo-600 text-base"></i>
                   </div>
-                ))}
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800">
+                      Stock Management
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5 leading-relaxed max-w-xl">
+                      ON: product add/edit e Opening Stock ar Low Stock Alert
+                      dekhabe (variant e o), ar cart/order e stock check hoye
+                      stock minus hobe. OFF: kothao stock deoya jabe na, ar
+                      stock niye kono check ba minus hobe na.
+                    </p>
+                  </div>
+                </div>
+                <InputSwitch
+                  checked={stockEnabled}
+                  onChange={(e) => handleToggle(!!e.value)}
+                  disabled={saving || !storeId}
+                />
               </div>
             )}
 
             <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 flex gap-3">
               <i className="pi pi-info-circle mt-0.5 flex-shrink-0"></i>
               <span className="leading-relaxed">
-                A snapshot of these settings is saved when a new product is created — changing
-                them later will not affect products that were already created.
+                This setting is saved on each product when it is created.
+                Changing it later will not affect products that were already
+                created.
               </span>
             </div>
           </div>

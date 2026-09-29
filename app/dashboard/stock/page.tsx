@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import axiosInstance from "@/service/axios.service";
 import { toast, ToastContainer } from "react-toastify";
 import { InputText } from "primereact/inputtext";
@@ -35,7 +35,118 @@ type StockRow = {
 
 type AdjustType = "ADD" | "REDUCE";
 
-// color name -> swatch hex (same list apnar product page-eo ache)
+const ROWS_PER_PAGE = 15;
+
+// ---------- Media helpers (image / gif / video) ----------
+const VIDEO_URL_REGEX = /\.(mp4|webm|mov)(\?.*)?$/i;
+const isVideoUrl = (url?: string | null) => !!url && VIDEO_URL_REGEX.test(url);
+
+/**
+ * Halka media preview.
+ *  - image/gif -> lazy-loaded <img>
+ *  - video     -> muted <video>, preload="metadata"
+ *      autoPlay=true  : screen e dekha gele play, baire gele pause
+ *      autoPlay=false : hover korle play, mouse soriye nile pause + first frame
+ *  - onError       : load fail hole parent fallback dekhate pare
+ */
+function MediaPreview({
+  src,
+  alt = "",
+  wrapperClassName = "",
+  autoPlay = true,
+  showBadge = true,
+  onError,
+}: {
+  src: string;
+  alt?: string;
+  wrapperClassName?: string;
+  autoPlay?: boolean;
+  showBadge?: boolean;
+  onError?: () => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const isVideo = isVideoUrl(src);
+
+  useEffect(() => {
+    if (!isVideo || !autoPlay) return;
+    const el = videoRef.current;
+    if (!el) return;
+
+    // user er device e "reduce motion" on thakle auto play korbo na
+    const reduceMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduceMotion) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          el.play().catch(() => {});
+        } else {
+          el.pause();
+        }
+      },
+      { threshold: 0.4 },
+    );
+    observer.observe(el);
+
+    return () => {
+      observer.disconnect();
+      el.pause();
+    };
+  }, [isVideo, autoPlay, src]);
+
+  if (!isVideo) {
+    return (
+      <div className={`relative overflow-hidden ${wrapperClassName}`}>
+        <img
+          src={src}
+          alt={alt}
+          loading="lazy"
+          decoding="async"
+          onError={onError}
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className={`relative overflow-hidden ${wrapperClassName}`}>
+      {/* #t=0.1 : play hobar age first frame poster hishebe dekhay (iOS Safari e o) */}
+      <video
+        ref={videoRef}
+        src={`${src}#t=0.1`}
+        muted
+        loop
+        playsInline
+        preload="metadata"
+        disablePictureInPicture
+        onError={onError}
+        onMouseEnter={
+          autoPlay ? undefined : (e) => e.currentTarget.play().catch(() => {})
+        }
+        onMouseLeave={
+          autoPlay
+            ? undefined
+            : (e) => {
+                e.currentTarget.pause();
+                e.currentTarget.currentTime = 0.1;
+              }
+        }
+        className="absolute inset-0 h-full w-full object-cover"
+      />
+      {showBadge && (
+        <span className="absolute bottom-0.5 left-0.5 bg-black/60 text-white rounded px-1 py-0.5 text-[9px] flex items-center gap-0.5 pointer-events-none">
+          <i className="pi pi-video text-[8px]"></i>
+          Video
+        </span>
+      )}
+    </div>
+  );
+}
+
+// color name -> swatch hex
 const COLOR_HEX: Record<string, string> = {
   red: "#ef4444",
   blue: "#3b82f6",
@@ -67,6 +178,44 @@ const getInitials = (name?: string) => {
   return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
 };
 
+// image/video thumbnail, load fail hole initials fallback
+function StockThumb({
+  src,
+  name,
+  sizeClass,
+}: {
+  src?: string | null;
+  name: string;
+  sizeClass: string; // e.g. "w-16 h-16"
+}) {
+  const [failed, setFailed] = useState(false);
+
+  // src change hole error state reset
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+
+  if (!src || failed) {
+    return (
+      <div
+        className={`${sizeClass} rounded-lg bg-blue-500 text-white flex items-center justify-center font-bold`}
+      >
+        {getInitials(name)}
+      </div>
+    );
+  }
+
+  return (
+    <MediaPreview
+      src={src}
+      alt={name}
+      autoPlay
+      onError={() => setFailed(true)}
+      wrapperClassName={`${sizeClass} rounded-lg border border-gray-200 bg-gray-100`}
+    />
+  );
+}
+
 function StockPage() {
   const [rows, setRows] = useState<StockRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -74,7 +223,6 @@ function StockPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [lowOnly, setLowOnly] = useState(false);
   const [page, setPage] = useState(1);
-  const [rowsPerPage] = useState(15);
   const [total, setTotal] = useState(0);
 
   const [activeRow, setActiveRow] = useState<StockRow | null>(null);
@@ -83,34 +231,60 @@ function StockPage() {
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search.trim()), 500);
-    return () => clearTimeout(timer);
-  }, [search]);
+  // stale response ignore korar jonno
+  const requestId = useRef(0);
 
+  // Search debounce + page reset ek shathe (double fetch hobe na)
   useEffect(() => {
+    const timer = setTimeout(() => {
+      const value = search.trim();
+      if (value !== debouncedSearch) {
+        setDebouncedSearch(value);
+        setPage(1);
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [search, debouncedSearch]);
+
+  const handleLowOnlyChange = (checked: boolean) => {
+    setLowOnly(checked);
     setPage(1);
-  }, [debouncedSearch, lowOnly]);
+  };
 
   const fetchRows = useCallback(async () => {
+    const currentRequest = ++requestId.current;
     try {
       setLoading(true);
       const res = await axiosInstance.get("/api/stock/overview", {
         params: {
           page,
-          limit: rowsPerPage,
+          limit: ROWS_PER_PAGE,
           ...(debouncedSearch ? { search: debouncedSearch } : {}),
           ...(lowOnly ? { lowStockOnly: "true" } : {}),
         },
       });
+
+      // porer request cholche, ei response ta purono
+      if (currentRequest !== requestId.current) return;
+
+      const totalRows = res.data.totalRows || 0;
+      const lastPage = Math.max(1, Math.ceil(totalRows / ROWS_PER_PAGE));
+
+      // current page er data nei (delete/reduce er por) -> last valid page e jao
+      if (page > lastPage) {
+        setPage(lastPage);
+        return;
+      }
+
       setRows(res.data.rows || []);
-      setTotal(res.data.totalRows || 0);
+      setTotal(totalRows);
     } catch (err: any) {
+      if (currentRequest !== requestId.current) return;
       toast.error(err?.response?.data?.message || "Failed to load stock");
     } finally {
-      setLoading(false);
+      if (currentRequest === requestId.current) setLoading(false);
     }
-  }, [page, rowsPerPage, debouncedSearch, lowOnly]);
+  }, [page, debouncedSearch, lowOnly]);
 
   useEffect(() => {
     fetchRows();
@@ -123,9 +297,18 @@ function StockPage() {
     setNote("");
   };
 
+  const closeAdjust = () => {
+    if (submitting) return;
+    setActiveRow(null);
+  };
+
   const submitAdjust = async () => {
     if (!activeRow || !quantity || quantity <= 0) {
       toast.error("Enter a valid quantity");
+      return;
+    }
+    if (adjustType === "REDUCE" && quantity > activeRow.currentStock) {
+      toast.error(`Cannot reduce more than current stock (${activeRow.currentStock})`);
       return;
     }
     try {
@@ -136,7 +319,7 @@ function StockPage() {
         sizeVariantId: activeRow.sizeVariantId,
         type: adjustType,
         quantity,
-        note,
+        note: note.trim(),
       });
       toast.success(res.data.message || "Stock updated");
       setActiveRow(null);
@@ -190,6 +373,8 @@ function StockPage() {
     );
   };
 
+  const maxReduce = activeRow?.currentStock ?? 0;
+
   return (
     <div className="w-full p-2 sm:p-4">
       <div
@@ -211,7 +396,10 @@ function StockPage() {
           />
           <div className="flex items-center gap-1.5 bg-white/20 rounded px-2 py-1">
             <span className="text-xs text-white">Low stock only</span>
-            <InputSwitch checked={lowOnly} onChange={(e) => setLowOnly(!!e.value)} />
+            <InputSwitch
+              checked={lowOnly}
+              onChange={(e) => handleLowOnlyChange(!!e.value)}
+            />
           </div>
         </div>
       </div>
@@ -229,7 +417,12 @@ function StockPage() {
         </div>
       )}
 
-      <div className="flex flex-col gap-2.5">
+      {/* page change hole list opacity kome, jhapsha hoy na */}
+      <div
+        className={`flex flex-col gap-2.5 transition-opacity ${
+          loading && rows.length > 0 ? "opacity-60 pointer-events-none" : ""
+        }`}
+      >
         {rows.map((row, idx) => (
           <div
             key={`${row.productId}-${row.variantId || "d"}-${row.sizeVariantId || "d"}-${idx}`}
@@ -237,19 +430,13 @@ function StockPage() {
               row.isLow ? "border-red-200 bg-red-50/40" : "border-gray-100"
             }`}
           >
-            {/* Image */}
+            {/* Image / Video */}
             <div className="shrink-0">
-              {row.image ? (
-                <img
-                  src={row.image}
-                  alt={row.productName}
-                  className="w-16 h-16 rounded-lg object-cover border border-gray-200"
-                />
-              ) : (
-                <div className="w-16 h-16 rounded-lg bg-blue-500 text-white flex items-center justify-center font-bold text-lg">
-                  {getInitials(row.productName)}
-                </div>
-              )}
+              <StockThumb
+                src={row.image}
+                name={row.productName}
+                sizeClass="w-16 h-16"
+              />
             </div>
 
             {/* Details */}
@@ -280,9 +467,7 @@ function StockPage() {
                 </span>
                 <span>
                   Alert Below:{" "}
-                  <b>
-                    {row.lowStockThreshold > 0 ? row.lowStockThreshold : "Off"}
-                  </b>
+                  <b>{row.lowStockThreshold > 0 ? row.lowStockThreshold : "Off"}</b>
                 </span>
               </div>
             </div>
@@ -304,6 +489,7 @@ function StockPage() {
                 label="Reduce"
                 icon="pi pi-minus"
                 size="small"
+                disabled={row.currentStock <= 0}
                 onClick={() => openAdjust(row, "REDUCE")}
                 style={{
                   background: "#fef2f2",
@@ -316,18 +502,18 @@ function StockPage() {
         ))}
       </div>
 
-      {total > rowsPerPage && (
+      {total > ROWS_PER_PAGE && (
         <div className="mt-4 flex justify-center">
           <Paginator
-            first={(page - 1) * rowsPerPage}
-            rows={rowsPerPage}
+            first={(page - 1) * ROWS_PER_PAGE}
+            rows={ROWS_PER_PAGE}
             totalRecords={total}
             onPageChange={(e) => setPage(e.page + 1)}
           />
         </div>
       )}
 
-      {/* Adjust Dialog — sudhu Add / Reduce, "Set" nei */}
+      {/* Adjust Dialog — sudhu Add / Reduce */}
       <Dialog
         header={
           activeRow
@@ -336,22 +522,16 @@ function StockPage() {
         }
         visible={!!activeRow}
         style={{ width: "min(90vw, 420px)" }}
-        onHide={() => setActiveRow(null)}
+        onHide={closeAdjust}
       >
         {activeRow && (
           <div className="space-y-3">
             <div className="flex items-center gap-3">
-              {activeRow.image ? (
-                <img
-                  src={activeRow.image}
-                  alt=""
-                  className="w-12 h-12 rounded-lg object-cover border"
-                />
-              ) : (
-                <div className="w-12 h-12 rounded-lg bg-blue-500 text-white flex items-center justify-center font-bold">
-                  {getInitials(activeRow.productName)}
-                </div>
-              )}
+              <StockThumb
+                src={activeRow.image}
+                name={activeRow.productName}
+                sizeClass="w-12 h-12"
+              />
               <div>
                 {renderVariantChips(activeRow)}
                 <p className="text-xs text-gray-500 mt-1">
@@ -368,10 +548,16 @@ function StockPage() {
                 value={quantity}
                 onValueChange={(e) => setQuantity(e.value ?? null)}
                 min={1}
+                max={adjustType === "REDUCE" ? maxReduce : undefined}
                 className="w-full"
                 inputClassName="w-full"
                 useGrouping={false}
               />
+              {adjustType === "REDUCE" && (
+                <small className="text-[11px] text-gray-500">
+                  Max {maxReduce} reduce kora jabe
+                </small>
+              )}
             </div>
             <div className="space-y-1">
               <label className="text-xs font-semibold text-gray-700">Note (optional)</label>
@@ -387,7 +573,7 @@ function StockPage() {
                 label="Cancel"
                 outlined
                 className="flex-1"
-                onClick={() => setActiveRow(null)}
+                onClick={closeAdjust}
                 disabled={submitting}
               />
               <Button

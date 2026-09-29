@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -18,6 +18,57 @@ type BannerFormProps = {
   onClose: () => void;
   onSuccess: () => void;
 };
+
+type ExistingMedia = { url: string; isVideo: boolean };
+
+const MAX_IMAGE_MB = 5;
+const MAX_VIDEO_MB = 30;
+const ALLOWED_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "image/avif",
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
+];
+const VIDEO_URL_REGEX = /\.(mp4|webm|mov)(\?.*)?$/i;
+
+function MediaBox({
+  src,
+  isVideo,
+  onRemove,
+}: {
+  src: string;
+  isVideo: boolean;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="relative w-full h-40 rounded overflow-hidden border bg-black/5">
+      {isVideo ? (
+        <video
+          src={src}
+          controls
+          muted
+          playsInline
+          preload="metadata"
+          className="w-full h-full object-cover"
+        />
+      ) : (
+        <img src={src} alt="banner" className="w-full h-full object-cover" />
+      )}
+      <button
+        type="button"
+        onClick={onRemove}
+        className="absolute top-1 right-1 bg-red-500 text-white w-6 h-6 rounded-full text-xs leading-none"
+        aria-label="Remove media"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
 
 function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -38,58 +89,87 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
     defaultValues: {
       name: "",
       storeId: undefined,
+      bannerURL: "",
     },
   });
 
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [existingImage, setExistingImage] = useState<string>("");
-  const [imagePreview, setImagePreview] = useState<string>("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [existingMedia, setExistingMedia] = useState<ExistingMedia | null>(
+    null,
+  );
   const [stores, setStores] = useState<any[]>([]);
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
-    const file = e.target.files[0];
-    setImageFile(file);
+  // object URL memory leak roke
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
 
-    const reader = new FileReader();
-    reader.onload = (ev) => setImagePreview(ev.target?.result as string);
-    reader.readAsDataURL(file);
+  const handleMediaChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // same file abar select korle o onChange fire hobe
+    if (!file) return;
+
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      toast.error(
+        "Only image (jpg, png, webp, gif, avif) or video (mp4, webm, mov) allowed",
+      );
+      return;
+    }
+
+    const isVideo = file.type.startsWith("video/");
+    const maxMb = isVideo ? MAX_VIDEO_MB : MAX_IMAGE_MB;
+    if (file.size > maxMb * 1024 * 1024) {
+      toast.error(`${isVideo ? "Video" : "Image"} must be under ${maxMb}MB`);
+      return;
+    }
+
+    setMediaFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
   };
 
-  const removeImage = (isExisting = false) => {
-    if (isExisting) {
-      setExistingImage("");
-    } else {
-      setImageFile(null);
-      setImagePreview("");
-    }
+  const removeNewMedia = () => {
+    setMediaFile(null);
+    setPreviewUrl("");
   };
 
   useEffect(() => {
     fetchStores();
-    if (bannerId) {
-      fetchBannerData();
-    }
+    if (bannerId) fetchBannerData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bannerId]);
 
   const fetchBannerData = async () => {
     try {
       setLoading(true);
-      const res = await axiosInstance.get(`/api/banner/single-banner/${bannerId}`);
+      const res = await axiosInstance.get(
+        `/api/banner/single-banner/${bannerId}`,
+      );
       const banner = res.data.banner;
 
       setValue("name", banner.name);
+      setValue("bannerURL", banner.bannerURL || "");
 
       if (banner.image) {
-        setExistingImage(banner.image);
+        setExistingMedia({
+          url: banner.image,
+          isVideo:
+            banner.mediaType === "video" || VIDEO_URL_REGEX.test(banner.image),
+        });
       }
 
       const storeId =
-        typeof banner.storeId === "object" ? banner.storeId?._id : banner.storeId;
+        typeof banner.storeId === "object"
+          ? banner.storeId?._id
+          : banner.storeId;
       if (storeId) setValue("storeId", storeId);
     } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to fetch banner data");
+      toast.error(
+        error.response?.data?.message || "Failed to fetch banner data",
+      );
       onClose();
     } finally {
       setLoading(false);
@@ -112,8 +192,9 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
   };
 
   const onSubmit = async (data: BannerFormData) => {
-    if (!isEditMode && !imageFile) {
-      toast.error("Banner image is required");
+    // create e to lagbei, edit e existing remove kore notun na dile o lagbe
+    if (!mediaFile && !existingMedia) {
+      toast.error("Banner image or video is required");
       return;
     }
 
@@ -125,34 +206,36 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
 
       const formData = new FormData();
       formData.append("name", data.name || "");
+      formData.append("bannerURL", (data.bannerURL || "").trim());
 
       if (!isEditMode && data.storeId) {
         formData.append("storeId", String(data.storeId));
       }
 
-      if (imageFile) {
-        formData.append("image", imageFile);
+      if (mediaFile) {
+        formData.append("media", mediaFile);
       }
 
+      // Content-Type manually set korbo na, browser boundary shoho nije set kore
       const res = await axiosInstance.request({
         url,
         method: isEditMode ? "put" : "post",
         data: formData,
-        headers: { "Content-Type": "multipart/form-data" },
       });
 
       toast.success(
-        res.data.message || `Banner ${isEditMode ? "updated" : "created"} successfully!`,
+        res.data.message ||
+          `Banner ${isEditMode ? "updated" : "created"} successfully!`,
       );
       reset();
-      setImageFile(null);
-      setImagePreview("");
-      setExistingImage("");
+      removeNewMedia();
+      setExistingMedia(null);
       onSuccess();
     } catch (error: any) {
       console.error("Banner operation error:", error);
       toast.error(
-        error.response?.data?.message || `Failed to ${isEditMode ? "update" : "create"} banner`,
+        error.response?.data?.message ||
+          `Failed to ${isEditMode ? "update" : "create"} banner`,
       );
     } finally {
       setIsSubmitting(false);
@@ -166,6 +249,8 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
       </div>
     );
   }
+
+  const showUploadInput = !mediaFile && !existingMedia;
 
   return (
     <div className="px-4 pt-2 pb-4 min-h-[40vh]">
@@ -182,7 +267,11 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
               <label className="text-sm font-semibold text-gray-700">
                 Banner Name <span className="text-red-500">*</span>
               </label>
-              <InputText className="w-full" {...register("name")} placeholder="Enter banner name" />
+              <InputText
+                className="w-full"
+                {...register("name")}
+                placeholder="Enter banner name"
+              />
               {errors.name && (
                 <small className="text-red-500 flex items-center gap-1">
                   <i className="pi pi-exclamation-circle"></i>
@@ -201,7 +290,10 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
                 render={({ field }) => (
                   <Dropdown
                     value={field.value}
-                    options={stores.map((s) => ({ label: s.storeName, value: s._id }))}
+                    options={stores.map((s) => ({
+                      label: s.storeName,
+                      value: s._id,
+                    }))}
                     optionLabel="label"
                     optionValue="value"
                     placeholder="Select store"
@@ -212,63 +304,90 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
                 )}
               />
               {errors.storeId && (
-                <small className="text-red-500">{errors.storeId.message as string}</small>
+                <small className="text-red-500">
+                  {errors.storeId.message as string}
+                </small>
               )}
             </div>
           </div>
+
+          <div className="space-y-1">
+            <label className="text-sm font-semibold text-gray-700">
+              Banner URL{" "}
+              <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <InputText
+              className="w-full"
+              {...register("bannerURL")}
+              placeholder="https://example.com/offer"
+              inputMode="url"
+            />
+            {errors.bannerURL && (
+              <small className="text-red-500 flex items-center gap-1">
+                <i className="pi pi-exclamation-circle"></i>
+                {errors.bannerURL.message as string}
+              </small>
+            )}
+          </div>
         </div>
 
-        {/* Image */}
+        {/* Media */}
         <div className="space-y-3">
           <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
-            <i className="pi pi-image text-green-600"></i>
-            Banner Image {!isEditMode && <span className="text-red-500">*</span>}
+            <i className="pi pi-images text-green-600"></i>
+            Banner Image / Video <span className="text-red-500">*</span>
           </h3>
 
-          {existingImage && (
-            <div className="relative w-full h-40 rounded overflow-hidden border">
-              <img src={existingImage} alt="banner" className="w-full h-full object-cover" />
-              <button
-                type="button"
-                onClick={() => removeImage(true)}
-                className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full text-xs"
-              >
-                ×
-              </button>
-            </div>
-          )}
+          {mediaFile && previewUrl ? (
+            <MediaBox
+              src={previewUrl}
+              isVideo={mediaFile.type.startsWith("video/")}
+              onRemove={removeNewMedia}
+            />
+          ) : existingMedia ? (
+            <MediaBox
+              src={existingMedia.url}
+              isVideo={existingMedia.isVideo}
+              onRemove={() => setExistingMedia(null)}
+            />
+          ) : null}
 
-          {imagePreview && (
-            <div className="relative w-full h-40 rounded overflow-hidden border">
-              <img src={imagePreview} alt="preview" className="w-full h-full object-cover" />
-              <button
-                type="button"
-                onClick={() => removeImage(false)}
-                className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full text-xs"
-              >
-                ×
-              </button>
-            </div>
-          )}
-
-          {!existingImage && !imagePreview && (
+          {showUploadInput && (
             <input
+              ref={fileInputRef}
               type="file"
-              onChange={handleImageChange}
+              onChange={handleMediaChange}
               className="w-full p-2 border border-yellow-300 rounded-lg"
-              accept="image/*"
+              accept="image/jpeg,image/png,image/webp,image/gif,image/avif,video/mp4,video/webm,video/quicktime"
             />
           )}
 
-          {/* existing image replace korte chaile notun file dite pare */}
-          {(existingImage || imagePreview) && (
-            <input
-              type="file"
-              onChange={handleImageChange}
-              className="w-full p-2 border border-yellow-300 rounded-lg"
-              accept="image/*"
+          {/* existing / notun media replace korar jonno */}
+          {!showUploadInput && (
+            <Button
+              type="button"
+              label="Replace with another file"
+              icon="pi pi-upload"
+              size="small"
+              outlined
+              onClick={() => fileInputRef.current?.click()}
             />
           )}
+          {/* replace button er jonno hidden input (upload input hidden thakle eta kaj kore) */}
+          {!showUploadInput && (
+            <input
+              ref={fileInputRef}
+              type="file"
+              onChange={handleMediaChange}
+              className="hidden"
+              accept="image/jpeg,image/png,image/webp,image/gif,image/avif,video/mp4,video/webm,video/quicktime"
+            />
+          )}
+
+          <small className="text-gray-500 block">
+            Image max {MAX_IMAGE_MB}MB, video max {MAX_VIDEO_MB}MB (mp4, webm,
+            mov)
+          </small>
         </div>
 
         {/* SUBMIT BUTTONS */}
@@ -284,7 +403,13 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
           />
           <Button
             type="submit"
-            label={isSubmitting ? "Saving..." : isEditMode ? "Update Banner" : "Create Banner"}
+            label={
+              isSubmitting
+                ? "Saving..."
+                : isEditMode
+                  ? "Update Banner"
+                  : "Create Banner"
+            }
             icon={isSubmitting ? "pi pi-spin pi-spinner" : "pi pi-check"}
             className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 border-0 text-white shadow-lg hover:shadow-xl transform hover:scale-[1.02] transition-all duration-300"
             disabled={isSubmitting}

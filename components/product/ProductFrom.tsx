@@ -19,6 +19,8 @@ import { Button } from "primereact/button";
 import { Dialog } from "primereact/dialog";
 import { toast } from "react-toastify";
 import axiosInstance from "@/service/axios.service";
+// [STOCK] create mode e store setting dekhar jonno
+import { getStoreSettings } from "@/service/storeSetting.service";
 import {
   createProductSchema,
   updateProductSchema,
@@ -311,6 +313,7 @@ function SizeVariantRow({
   onRemove,
   canRemove,
   showRemove,
+  showStock,
 }: {
   control: Control<any>;
   register: any;
@@ -319,6 +322,8 @@ function SizeVariantRow({
   onRemove: () => void;
   canRemove: boolean;
   showRemove: boolean;
+  // [STOCK] stock management off hole Opening Stock / Low Stock Alert lukiye jay
+  showStock: boolean;
 }) {
   return (
     <div className="border border-blue-100 rounded-lg p-2 bg-blue-50/40 relative">
@@ -335,7 +340,11 @@ function SizeVariantRow({
         Fill at least one of Size, Weight or Height{" "}
         <span className="text-red-500">*</span>
       </p>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2">
+      <div
+        className={`grid grid-cols-2 sm:grid-cols-3 gap-2 ${
+          showStock ? "lg:grid-cols-7" : "lg:grid-cols-6"
+        }`}
+      >
         <div className="space-y-1 min-w-0">
           <label className="text-[10px] font-semibold text-gray-600">
             Size
@@ -411,45 +420,52 @@ function SizeVariantRow({
             )}
           />
         </div>
-        <div className="space-y-1 min-w-0">
-          <label className="text-[10px] font-semibold text-gray-600">
-            Opening Stock
-          </label>
-          <Controller
-            name={`${basePath}.openingStock` as any}
-            control={control}
-            render={({ field }) => (
-              <InputNumber
-                value={field.value ?? 0}
-                onValueChange={(e) => field.onChange(e.value)}
-                className="w-full"
-                inputClassName="w-full p-inputtext-sm"
-                min={0}
-                useGrouping={false}
+
+        {/* [STOCK] Opening Stock + Low Stock Alert shudhu stock on thakle */}
+        {showStock && (
+          <>
+            <div className="space-y-1 min-w-0">
+              <label className="text-[10px] font-semibold text-gray-600">
+                Opening Stock
+              </label>
+              <Controller
+                name={`${basePath}.openingStock` as any}
+                control={control}
+                render={({ field }) => (
+                  <InputNumber
+                    value={field.value ?? 0}
+                    onValueChange={(e) => field.onChange(e.value)}
+                    className="w-full"
+                    inputClassName="w-full p-inputtext-sm"
+                    min={0}
+                    useGrouping={false}
+                  />
+                )}
               />
-            )}
-          />
-        </div>
-        <div className="space-y-1 min-w-0">
-          <label className="text-[10px] font-semibold text-gray-600">
-            Low Stock Alert
-          </label>
-          <Controller
-            name={`${basePath}.lowStockThreshold` as any}
-            control={control}
-            render={({ field }) => (
-              <InputNumber
-                value={field.value ?? 0}
-                onValueChange={(e) => field.onChange(e.value)}
-                className="w-full"
-                inputClassName="w-full p-inputtext-sm"
-                min={0}
-                useGrouping={false}
-                placeholder="0 = off"
+            </div>
+            <div className="space-y-1 min-w-0">
+              <label className="text-[10px] font-semibold text-gray-600">
+                Low Stock Alert
+              </label>
+              <Controller
+                name={`${basePath}.lowStockThreshold` as any}
+                control={control}
+                render={({ field }) => (
+                  <InputNumber
+                    value={field.value ?? 0}
+                    onValueChange={(e) => field.onChange(e.value)}
+                    className="w-full"
+                    inputClassName="w-full p-inputtext-sm"
+                    min={0}
+                    useGrouping={false}
+                    placeholder="0 = off"
+                  />
+                )}
               />
-            )}
-          />
-        </div>
+            </div>
+          </>
+        )}
+
         <div className="space-y-1 min-w-0 col-span-2 sm:col-span-1">
           <label className="text-[10px] font-semibold text-gray-600">SKU</label>
           <InputText
@@ -481,6 +497,7 @@ function ColorVariantBlock({
   onRemoveImage,
   onOpenCamera,
   getDefaults,
+  showStock,
 }: {
   control: Control<any>;
   register: any;
@@ -492,6 +509,8 @@ function ColorVariantBlock({
   onRemoveImage: (index: number, isExisting: boolean) => void;
   onOpenCamera: () => void;
   getDefaults: () => Defaults;
+  // [STOCK] stock management off hole stock field lukiye jay
+  showStock: boolean;
 }) {
   const {
     fields: sizeFields,
@@ -576,7 +595,7 @@ function ColorVariantBlock({
         </div>
         <p className="text-[10px] text-gray-400">
           JPG, PNG, WEBP, GIF, AVIF, MP4, WEBM, MOV. Max {MAX_MEDIA_SIZE_MB}MB
-          per file.
+          per file. Video upload korle GIF hoye save hobe.
         </p>
       </div>
 
@@ -608,6 +627,7 @@ function ColorVariantBlock({
               onRemove={() => removeSize(si)}
               canRemove={sizeFields.length > 1}
               showRemove
+              showStock={showStock}
             />
           ))}
           <Button
@@ -621,7 +641,11 @@ function ColorVariantBlock({
         </div>
       ) : (
         <div className="border border-blue-100 rounded-lg p-2 bg-blue-50/30">
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          <div
+            className={`grid grid-cols-2 gap-2 ${
+              showStock ? "sm:grid-cols-5" : "sm:grid-cols-3"
+            }`}
+          >
             <div className="space-y-1 min-w-0">
               <label className="text-[10px] font-semibold text-gray-600">
                 MRP <span className="text-red-500">*</span>
@@ -667,45 +691,52 @@ function ColorVariantBlock({
                 )}
               />
             </div>
-            <div className="space-y-1 min-w-0">
-              <label className="text-[10px] font-semibold text-gray-600">
-                Opening Stock
-              </label>
-              <Controller
-                name={`variants.${colorIndex}.openingStock` as any}
-                control={control}
-                render={({ field }) => (
-                  <InputNumber
-                    value={field.value ?? 0}
-                    onValueChange={(e) => field.onChange(e.value)}
-                    className="w-full"
-                    inputClassName="w-full p-inputtext-sm"
-                    min={0}
-                    useGrouping={false}
+
+            {/* [STOCK] Opening Stock + Low Stock Alert shudhu stock on thakle */}
+            {showStock && (
+              <>
+                <div className="space-y-1 min-w-0">
+                  <label className="text-[10px] font-semibold text-gray-600">
+                    Opening Stock
+                  </label>
+                  <Controller
+                    name={`variants.${colorIndex}.openingStock` as any}
+                    control={control}
+                    render={({ field }) => (
+                      <InputNumber
+                        value={field.value ?? 0}
+                        onValueChange={(e) => field.onChange(e.value)}
+                        className="w-full"
+                        inputClassName="w-full p-inputtext-sm"
+                        min={0}
+                        useGrouping={false}
+                      />
+                    )}
                   />
-                )}
-              />
-            </div>
-            <div className="space-y-1 min-w-0">
-              <label className="text-[10px] font-semibold text-gray-600">
-                Low Stock Alert
-              </label>
-              <Controller
-                name={`variants.${colorIndex}.lowStockThreshold` as any}
-                control={control}
-                render={({ field }) => (
-                  <InputNumber
-                    value={field.value ?? 0}
-                    onValueChange={(e) => field.onChange(e.value)}
-                    className="w-full"
-                    inputClassName="w-full p-inputtext-sm"
-                    min={0}
-                    useGrouping={false}
-                    placeholder="0 = off"
+                </div>
+                <div className="space-y-1 min-w-0">
+                  <label className="text-[10px] font-semibold text-gray-600">
+                    Low Stock Alert
+                  </label>
+                  <Controller
+                    name={`variants.${colorIndex}.lowStockThreshold` as any}
+                    control={control}
+                    render={({ field }) => (
+                      <InputNumber
+                        value={field.value ?? 0}
+                        onValueChange={(e) => field.onChange(e.value)}
+                        className="w-full"
+                        inputClassName="w-full p-inputtext-sm"
+                        min={0}
+                        useGrouping={false}
+                        placeholder="0 = off"
+                      />
+                    )}
                   />
-                )}
-              />
-            </div>
+                </div>
+              </>
+            )}
+
             <div className="space-y-1 min-w-0">
               <label className="text-[10px] font-semibold text-gray-600">
                 SKU
@@ -736,6 +767,10 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
   const [productCode, setProductCode] = useState<string>("");
   const [currentStockInfo, setCurrentStockInfo] = useState<number | null>(null);
   const isEditMode = !!productId;
+
+  // [STOCK] create: store settings theke, edit: product er nijer hasStockManagement flag theke.
+  // false hole main product, color variant, size variant, kothao stock field dekhabe na.
+  const [stockEnabled, setStockEnabled] = useState(false);
 
   // Both toggles are real state and only change when the user clicks them.
   // hasColor = color variants on/off
@@ -1136,6 +1171,26 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedStoreId]);
 
+  // [STOCK] create mode: selected store er stock management setting load
+  useEffect(() => {
+    if (isEditMode || !isValidObjectId(selectedStoreId)) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const res = await getStoreSettings(selectedStoreId as string);
+        if (!cancelled)
+          setStockEnabled(!!res.data?.settings?.hasStockManagement);
+      } catch {
+        if (!cancelled) setStockEnabled(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedStoreId, isEditMode]);
+
   const fetchProductData = async () => {
     try {
       setLoading(true);
@@ -1148,6 +1203,9 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
       setValue("description", product.description || "");
       setValue("unit", product.unit || "");
       setValue("packagingDetails", product.packagingDetails || {});
+
+      // [STOCK] edit mode e product er nijer flag dekhe stock field show/hide
+      setStockEnabled(product.hasStockManagement !== false);
 
       const rawVariants: any[] = Array.isArray(product.variants)
         ? product.variants
@@ -1412,15 +1470,28 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
       const values = getValues();
       const globalPackaging = values.packagingDetails || {};
 
+      // [STOCK] stock off hole variant/size level e o opening stock + low stock alert shobshomoy 0 jabe
+      const stockOf = (o: any) =>
+        stockEnabled
+          ? {
+              openingStock: o?.openingStock ?? 0,
+              lowStockThreshold: o?.lowStockThreshold ?? 0,
+            }
+          : { openingStock: 0, lowStockThreshold: 0 };
+
       if (!hasVariants) {
         formData.append("mrp", String(values.mrp ?? 0));
         if (!isNil(values.offerPrice))
           formData.append("offerPrice", String(values.offerPrice));
+        // [STOCK] main product er stock
         formData.append(
           "lowStockThreshold",
-          String((values as any).lowStockThreshold ?? 0),
+          String(stockEnabled ? ((values as any).lowStockThreshold ?? 0) : 0),
         );
-        formData.append("openingStock", String(values.openingStock ?? 0));
+        formData.append(
+          "openingStock",
+          String(stockEnabled ? (values.openingStock ?? 0) : 0),
+        );
         formData.append("packagingDetails", JSON.stringify(globalPackaging));
         formData.append("variants", JSON.stringify([]));
       } else {
@@ -1453,8 +1524,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
                   height: sv.height || undefined,
                   mrp: sv.mrp,
                   offerPrice: isNil(sv.offerPrice) ? undefined : sv.offerPrice,
-                  openingStock: sv.openingStock ?? 0,
-                  lowStockThreshold: sv.lowStockThreshold ?? 0,
+                  ...stockOf(sv), // [STOCK]
                   sku: sv.sku || undefined,
                   packagingDetails: packagingOf(
                     sv.packagingDetails,
@@ -1470,8 +1540,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
               images: imgState.existing,
               mrp: v.mrp,
               offerPrice: isNil(v.offerPrice) ? undefined : v.offerPrice,
-              openingStock: v.openingStock ?? 0,
-              lowStockThreshold: v.lowStockThreshold ?? 0,
+              ...stockOf(v), // [STOCK]
               sku: v.sku || undefined,
               packagingDetails: packagingOf(
                 v.packagingDetails,
@@ -1480,14 +1549,14 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
             };
           }
 
+          // plain size/weight/height variant
           return {
             size: v.size || undefined,
             weight: v.weight || undefined,
             height: v.height || undefined,
             mrp: v.mrp,
             offerPrice: isNil(v.offerPrice) ? undefined : v.offerPrice,
-            openingStock: v.openingStock ?? 0,
-            lowStockThreshold: v.lowStockThreshold ?? 0,
+            ...stockOf(v), // [STOCK]
             sku: v.sku || undefined,
             packagingDetails: packagingOf(v.packagingDetails, globalPackaging),
           };
@@ -1513,7 +1582,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
         method: isEditMode ? "put" : "post",
         data: formData,
         headers: { "Content-Type": "multipart/form-data" },
-        // video upload e time lage, default timeout e fail na hoy
+        // video upload + GIF convert e time lage, default timeout e fail na hoy
         timeout: 5 * 60 * 1000,
       });
 
@@ -1557,7 +1626,8 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
             <span className="text-sm font-semibold text-gray-800">
               {productCode}
             </span>
-            {currentStockInfo !== null && !hasVariants && (
+            {/* [STOCK] current stock badge shudhu stock on thakle */}
+            {currentStockInfo !== null && !hasVariants && stockEnabled && (
               <span className="ml-auto text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full border border-blue-200">
                 Current Stock: {currentStockInfo}
               </span>
@@ -1729,7 +1799,8 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
           </div>
           <p className="text-[11px] text-gray-400">
             Supported: JPG, PNG, WEBP, GIF, AVIF, MP4, WEBM, MOV. Max{" "}
-            {MAX_MEDIA_SIZE_MB}MB per file.
+            {MAX_MEDIA_SIZE_MB}MB per file. Video upload korle GIF hoye save
+            hobe.
           </p>
         </div>
 
@@ -1773,7 +1844,8 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
         <div className="space-y-2">
           <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
             <span className="text-blue-600 text-base">₹</span>
-            Pricing &amp; Stock
+            {/* [STOCK] stock off hole heading e "& Stock" thakbe na */}
+            Pricing{stockEnabled ? " & Stock" : ""}
           </h3>
           {hasVariants && (
             <p className="text-xs text-gray-500">
@@ -1781,7 +1853,11 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
               change them in any individual variant.
             </p>
           )}
-          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-5">
+          <div
+            className={`grid grid-cols-1 gap-2.5 ${
+              stockEnabled ? "sm:grid-cols-5" : "sm:grid-cols-3"
+            }`}
+          >
             <div className="space-y-1">
               <label className="text-xs font-semibold text-gray-700">
                 MRP {!hasVariants && <span className="text-red-500">*</span>}
@@ -1828,50 +1904,57 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
                 )}
               />
             </div>
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-gray-700">
-                Opening Stock
-              </label>
-              <Controller
-                name="openingStock"
-                control={control}
-                render={({ field: f }) => (
-                  <InputNumber
-                    value={f.value ?? 0}
-                    onValueChange={(e) =>
-                      onGlobalChange("openingStock", e.value ?? 0)
-                    }
-                    placeholder="Opening stock"
-                    min={0}
-                    className="w-full"
-                    inputClassName="w-full"
-                    useGrouping={false}
+
+            {/* [STOCK] Opening Stock + Low Stock Alert shudhu stock on thakle */}
+            {stockEnabled && (
+              <>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-gray-700">
+                    Opening Stock
+                  </label>
+                  <Controller
+                    name="openingStock"
+                    control={control}
+                    render={({ field: f }) => (
+                      <InputNumber
+                        value={f.value ?? 0}
+                        onValueChange={(e) =>
+                          onGlobalChange("openingStock", e.value ?? 0)
+                        }
+                        placeholder="Opening stock"
+                        min={0}
+                        className="w-full"
+                        inputClassName="w-full"
+                        useGrouping={false}
+                      />
+                    )}
                   />
-                )}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-gray-700">
-                Low Stock Alert
-              </label>
-              <Controller
-                name={"lowStockThreshold" as any}
-                control={control}
-                render={({ field: f }) => (
-                  <InputNumber
-                    value={f.value ?? 0}
-                    onValueChange={(e) =>
-                      onGlobalChange("lowStockThreshold", e.value ?? 0)
-                    }
-                    placeholder="0 = off"
-                    min={0}
-                    className="w-full"
-                    inputClassName="w-full"
-                    useGrouping={false}
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-gray-700">
+                    Low Stock Alert
+                  </label>
+                  <Controller
+                    name={"lowStockThreshold" as any}
+                    control={control}
+                    render={({ field: f }) => (
+                      <InputNumber
+                        value={f.value ?? 0}
+                        onValueChange={(e) =>
+                          onGlobalChange("lowStockThreshold", e.value ?? 0)
+                        }
+                        placeholder="0 = off"
+                        min={0}
+                        className="w-full"
+                        inputClassName="w-full"
+                        useGrouping={false}
+                      />
+                    )}
                   />
-                )}
-              />
-            </div>
+                </div>
+              </>
+            )}
+
             <div className="space-y-1">
               <label className="text-xs font-semibold text-gray-700">SKU</label>
               <Controller
@@ -1932,6 +2015,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
                       }
                       onOpenCamera={() => openCamera(uiKey)}
                       getDefaults={getDefaults}
+                      showStock={stockEnabled}
                     />
                   </div>
                 ) : (
@@ -1958,6 +2042,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
                       onRemove={() => handleRemoveVariant(index, uiKey)}
                       canRemove={variantFields.length > 1}
                       showRemove={false}
+                      showStock={stockEnabled}
                     />
                   </div>
                 );

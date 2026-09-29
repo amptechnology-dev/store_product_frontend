@@ -104,14 +104,32 @@ export const createProductSchema = zod.object({
   packagingDetails: packagingDetailsSchema,
 
   // Loose union - real per-row validation component-e manually hoy
-  variants: zod.array(zod.union([colorVariantSchema, sizeVariantSchema])).optional(),
+  variants: zod
+    .array(zod.union([colorVariantSchema, sizeVariantSchema]))
+    .optional(),
 });
 
 export const updateProductSchema = createProductSchema.partial();
 
+export const bannerURLSchema = zod
+  .string()
+  .trim()
+  .max(2048, "URL is too long")
+  .refine((value) => {
+    if (!value) return true;
+    try {
+      const url = new URL(value);
+      return ["http:", "https:"].includes(url.protocol);
+    } catch {
+      return false;
+    }
+  }, "Enter a valid URL starting with http:// or https://")
+  .optional();
+
 export const createBannerSchema = zod.object({
   name: zod.string().trim().min(1, "Banner name is required"),
   storeId: zod.string().min(1, "Store is required"),
+  bannerURL: bannerURLSchema,
 });
 
 export const updateBannerSchema = createBannerSchema.partial();

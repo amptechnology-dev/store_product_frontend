@@ -5,6 +5,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Avatar } from "primereact/avatar";
 import { useNotifications } from "@/lib/NotificationContext";
+// [STOCK] stock menu show/hide korar jonno
+import axiosInstance from "@/service/axios.service";
+import { getStoreSettings } from "@/service/storeSetting.service";
 
 // ---------------- TYPES ----------------
 
@@ -44,11 +47,45 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
   const [isMobile, setIsMobile] = useState(false);
   const { unreadCount } = useNotifications();
 
+  // [STOCK] kono store er stock management on thakle-i Stock menu dekhabe
+  const [stockEnabled, setStockEnabled] = useState(false);
+
   const isActive = (href?: string) => {
     if (!href) return false;
     if (href === "/dashboard") return pathname === "/dashboard";
     return pathname === href || pathname.startsWith(href + "/");
   };
+
+  // [STOCK] store settings theke stock management on/off load
+  useEffect(() => {
+    if (role !== "STORE") return;
+    let cancelled = false;
+
+    const loadStockSetting = async () => {
+      try {
+        const res = await axiosInstance.get("/api/register/user-based-stores");
+        const stores = res.data?.stores || [];
+        const results = await Promise.all(
+          stores.map((s: any) =>
+            getStoreSettings(s._id)
+              .then((r) => !!r.data?.settings?.hasStockManagement)
+              .catch(() => false),
+          ),
+        );
+        if (!cancelled) setStockEnabled(results.some(Boolean));
+      } catch {
+        if (!cancelled) setStockEnabled(false);
+      }
+    };
+
+    loadStockSetting();
+    // settings page theke toggle korle menu instantly update hoy
+    window.addEventListener("storeSettingsChanged", loadStockSetting);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("storeSettingsChanged", loadStockSetting);
+    };
+  }, [role]);
 
   // Load collapsed state
   useEffect(() => {
@@ -133,11 +170,16 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
                 icon: "pi-box",
                 href: "/dashboard/products",
               },
-              {
-                label: "Stock Management",
-                icon: "pi-warehouse",
-                href: "/dashboard/stock",
-              },
+              // [STOCK] stock management off thakle ei menu dekhabe na
+              ...(stockEnabled
+                ? [
+                    {
+                      label: "Stock Management",
+                      icon: "pi-warehouse",
+                      href: "/dashboard/stock",
+                    },
+                  ]
+                : []),
               {
                 label: "Karigars",
                 icon: "pi-users",
@@ -333,7 +375,7 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
             {sec.items.map((item) => {
               const active = isActive(item.href);
               const showBadge =
-                item.label === "Orders" && role === "STORE" && unreadCount > 0; // 👈 add
+                item.label === "Orders" && role === "STORE" && unreadCount > 0;
 
               return (
                 <Link
@@ -367,7 +409,7 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
                   <span
                     className="sidebar-icon"
                     style={{
-                      position: "relative", // 👈 add
+                      position: "relative",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
@@ -398,7 +440,7 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
                       }}
                     />
 
-                    {/* 👇 Notification badge */}
+                    {/* Notification badge */}
                     {showBadge && (
                       <span
                         style={{
