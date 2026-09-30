@@ -10,6 +10,13 @@ import { Button } from "primereact/button";
 import { toast } from "react-toastify";
 import axiosInstance from "@/service/axios.service";
 import { createBannerSchema, updateBannerSchema } from "@/helper/schema/Schema";
+import {
+  useVideoTrimmer,
+  appendMediaFile,
+  getTrim,
+  formatTime,
+  MAX_CLIP_SECONDS,
+} from "@/components/VideoTrim";
 
 type BannerFormData = z.infer<typeof createBannerSchema>;
 
@@ -22,7 +29,7 @@ type BannerFormProps = {
 type ExistingMedia = { url: string; isVideo: boolean };
 
 const MAX_IMAGE_MB = 5;
-const MAX_VIDEO_MB = 30;
+const MAX_VIDEO_MB = 100; // original video (backend multer limit er sathe mil)
 const ALLOWED_TYPES = [
   "image/jpeg",
   "image/png",
@@ -77,6 +84,8 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
   const [loading, setLoading] = useState(false);
   const isEditMode = !!bannerId;
 
+  const { prepareFiles, trimDialog } = useVideoTrimmer();
+
   const {
     register,
     handleSubmit,
@@ -93,7 +102,7 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
       name: "",
       storeId: undefined,
       categoryId: undefined,
-      bannerURL: "",
+      productId: undefined,
     },
   });
 
@@ -106,8 +115,11 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
   const [stores, setStores] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
+  const [products, setProducts] = useState<any[]>([]);
+  const [productsLoading, setProductsLoading] = useState(false);
 
   const selectedStoreId = watch("storeId");
+  const selectedCategoryId = watch("categoryId");
 
   // object URL memory leak roke
   useEffect(() => {
@@ -116,7 +128,7 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
     };
   }, [previewUrl]);
 
-  const handleMediaChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleMediaChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = ""; // same file abar select korle o onChange fire hobe
     if (!file) return;
@@ -135,8 +147,12 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
       return;
     }
 
-    setMediaFile(file);
-    setPreviewUrl(URL.createObjectURL(file));
+    // video 15s er beshi hole trim dialog khulbe, user skip korle file nibe na
+    const [ready] = await prepareFiles([file]);
+    if (!ready) return;
+
+    setMediaFile(ready);
+    setPreviewUrl(URL.createObjectURL(ready));
   };
 
   const removeNewMedia = () => {
@@ -160,6 +176,21 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedStoreId]);
 
+  // store ba category change hole product list refresh (category dile shudhu oi category r product)
+  useEffect(() => {
+    if (isValidObjectId(selectedStoreId)) {
+      fetchProducts(
+        selectedStoreId as string,
+        isValidObjectId(selectedCategoryId as string)
+          ? (selectedCategoryId as string)
+          : undefined,
+      );
+    } else {
+      setProducts([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStoreId, selectedCategoryId]);
+
   const fetchBannerData = async () => {
     try {
       setLoading(true);
@@ -169,7 +200,6 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
       const banner = res.data.banner;
 
       setValue("name", banner.name);
-      setValue("bannerURL", banner.bannerURL || "");
 
       if (banner.image) {
         setExistingMedia({
@@ -190,6 +220,12 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
           ? banner.categoryId?._id
           : banner.categoryId;
       setValue("categoryId", categoryId || null);
+
+      const productId =
+        typeof banner.productId === "object"
+          ? banner.productId?._id
+          : banner.productId;
+      setValue("productId", productId || null);
     } catch (error: any) {
       toast.error(
         error.response?.data?.message || "Failed to fetch banner data",
@@ -230,6 +266,21 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
     }
   };
 
+  const fetchProducts = async (storeId: string, categoryId?: string) => {
+    try {
+      setProductsLoading(true);
+      const res = await axiosInstance.get("/api/banner/product-options", {
+        params: { storeId, ...(categoryId ? { categoryId } : {}) },
+      });
+      setProducts(res.data?.products || []);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "Failed to fetch products");
+      setProducts([]);
+    } finally {
+      setProductsLoading(false);
+    }
+  };
+
   const onSubmit = async (data: BannerFormData) => {
     // create e to lagbei, edit e existing remove kore notun na dile o lagbe
     if (!mediaFile && !existingMedia) {
@@ -245,17 +296,24 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
 
       const formData = new FormData();
       formData.append("name", data.name || "");
-      formData.append("bannerURL", (data.bannerURL || "").trim());
 
       if (!isEditMode && data.storeId) {
         formData.append("storeId", String(data.storeId));
       }
 
-      // category optional: khali ("") pathale backend e category remove / nai hisebe dhore
-      formData.append("categoryId", data.categoryId ? String(data.categoryId) : "");
+      // category/product optional: khali ("") pathale backend e remove / nai hisebe dhore
+      formData.append(
+        "categoryId",
+        data.categoryId ? String(data.categoryId) : "",
+      );
+      formData.append(
+        "productId",
+        data.productId ? String(data.productId) : "",
+      );
 
+      // video hole trim (start/end) file er naam e jay, backend oi part ta kete GIF banay
       if (mediaFile) {
-        formData.append("media", mediaFile);
+        appendMediaFile(formData, "media", mediaFile);
       }
 
       // Content-Type manually set korbo na, browser boundary shoho nije set kore
@@ -263,6 +321,8 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
         url,
         method: isEditMode ? "put" : "post",
         data: formData,
+        // boro video upload + GIF convert e time lage
+        timeout: 10 * 60 * 1000,
       });
 
       toast.success(
@@ -293,6 +353,8 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
   }
 
   const showUploadInput = !mediaFile && !existingMedia;
+  const mediaIsVideo = !!mediaFile && mediaFile.type.startsWith("video/");
+  const trim = mediaIsVideo ? getTrim(mediaFile) : null;
 
   return (
     <div className="px-4 pt-2 pb-4 min-h-[40vh]">
@@ -343,8 +405,9 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
                     disabled={isEditMode}
                     onChange={(e) => {
                       field.onChange(e.value);
-                      // store change hole ager category ar valid na
+                      // store change hole ager category ar product valid na
                       setValue("categoryId", null);
+                      setValue("productId", null);
                     }}
                   />
                 )}
@@ -387,7 +450,11 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
                     disabled={
                       !isValidObjectId(selectedStoreId) || categoriesLoading
                     }
-                    onChange={(e) => field.onChange(e.value ?? null)}
+                    onChange={(e) => {
+                      field.onChange(e.value ?? null);
+                      // category change hole ager product ei category r na o hote pare
+                      setValue("productId", null);
+                    }}
                   />
                 )}
               />
@@ -397,25 +464,51 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
                 </small>
               )}
             </div>
-          </div>
 
-          <div className="space-y-1">
-            <label className="text-sm font-semibold text-gray-700">
-              Banner URL{" "}
-              <span className="text-gray-400 font-normal">(optional)</span>
-            </label>
-            <InputText
-              className="w-full"
-              {...register("bannerURL")}
-              placeholder="https://example.com/offer"
-              inputMode="url"
-            />
-            {errors.bannerURL && (
-              <small className="text-red-500 flex items-center gap-1">
-                <i className="pi pi-exclamation-circle"></i>
-                {errors.bannerURL.message as string}
-              </small>
-            )}
+            <div className="space-y-1">
+              <label className="text-sm font-semibold text-gray-700">
+                Product{" "}
+                <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              <Controller
+                name="productId"
+                control={control}
+                render={({ field }) => (
+                  <Dropdown
+                    value={field.value || null}
+                    options={products.map((p) => ({
+                      label: p.productCode
+                        ? `${p.name} (${p.productCode})`
+                        : p.name,
+                      value: p._id,
+                    }))}
+                    optionLabel="label"
+                    optionValue="value"
+                    placeholder={
+                      !isValidObjectId(selectedStoreId)
+                        ? "Select store first"
+                        : productsLoading
+                          ? "Loading products..."
+                          : products.length === 0
+                            ? "No products found"
+                            : "Select product"
+                    }
+                    className="w-full"
+                    filter
+                    showClear
+                    disabled={
+                      !isValidObjectId(selectedStoreId) || productsLoading
+                    }
+                    onChange={(e) => field.onChange(e.value ?? null)}
+                  />
+                )}
+              />
+              {errors.productId && (
+                <small className="text-red-500">
+                  {errors.productId.message as string}
+                </small>
+              )}
+            </div>
           </div>
         </div>
 
@@ -429,7 +522,7 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
           {mediaFile && previewUrl ? (
             <MediaBox
               src={previewUrl}
-              isVideo={mediaFile.type.startsWith("video/")}
+              isVideo={mediaIsVideo}
               onRemove={removeNewMedia}
             />
           ) : existingMedia ? (
@@ -439,6 +532,18 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
               onRemove={() => setExistingMedia(null)}
             />
           ) : null}
+
+          {/* selected clip info (video hole) */}
+          {trim && (
+            <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-1.5 text-xs text-blue-800">
+              <i className="pi pi-clock"></i>
+              <span>
+                Selected clip: {formatTime(trim.start)} –{" "}
+                {formatTime(trim.end)} ({(trim.end - trim.start).toFixed(1)}s).
+                GIF hoye save hobe.
+              </span>
+            </div>
+          )}
 
           {showUploadInput && (
             <input
@@ -474,7 +579,8 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
 
           <small className="text-gray-500 block">
             Image max {MAX_IMAGE_MB}MB, video max {MAX_VIDEO_MB}MB (mp4, webm,
-            mov)
+            mov). Video max {MAX_CLIP_SECONDS} sec (trim korte parben), GIF
+            hoye save hobe (max 1080p, 30MB er moddhe).
           </small>
         </div>
 
@@ -493,7 +599,9 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
             type="submit"
             label={
               isSubmitting
-                ? "Saving..."
+                ? mediaIsVideo
+                  ? "Converting to GIF..."
+                  : "Saving..."
                 : isEditMode
                   ? "Update Banner"
                   : "Create Banner"
@@ -504,6 +612,9 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
           />
         </div>
       </form>
+
+      {/* VIDEO TRIM DIALOG */}
+      {trimDialog}
     </div>
   );
 }

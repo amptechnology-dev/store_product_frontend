@@ -25,6 +25,11 @@ import {
   createProductSchema,
   updateProductSchema,
 } from "@/helper/schema/Schema";
+import {
+  useVideoTrimmer,
+  appendMediaFile,
+  MAX_CLIP_SECONDS,
+} from "@/components/VideoTrim";
 
 type ProductFormData = z.infer<typeof createProductSchema>;
 
@@ -57,9 +62,11 @@ const ALLOWED_MEDIA_TYPES = [
   "video/quicktime",
 ];
 const MEDIA_ACCEPT = ALLOWED_MEDIA_TYPES.join(",");
-const MAX_MEDIA_SIZE_MB = 50;
-const MAX_MEDIA_SIZE_BYTES = MAX_MEDIA_SIZE_MB * 1024 * 1024;
+const MAX_IMAGE_SIZE_MB = 50;
+const MAX_VIDEO_SIZE_MB = 100; // original video (backend multer limit er sathe mil)
 const MAX_FILES_PER_REQUEST = 30;
+
+const MEDIA_HINT = `JPG, PNG, WEBP, GIF, AVIF, MP4, WEBM, MOV. Image max ${MAX_IMAGE_SIZE_MB}MB, video max ${MAX_VIDEO_SIZE_MB}MB. Video max ${MAX_CLIP_SECONDS} sec (trim korte parben), GIF hoye save hobe.`;
 
 const VIDEO_URL_REGEX = /\.(mp4|webm|mov)(\?.*)?$/i;
 const isVideoUrl = (url?: string | null) => !!url && VIDEO_URL_REGEX.test(url);
@@ -76,8 +83,12 @@ const filterMediaFiles = (files: File[]): File[] => {
       );
       return;
     }
-    if (file.size > MAX_MEDIA_SIZE_BYTES) {
-      toast.error(`"${file.name}" is too large. Max ${MAX_MEDIA_SIZE_MB}MB.`);
+    const isVideo = file.type.startsWith("video/");
+    const maxMb = isVideo ? MAX_VIDEO_SIZE_MB : MAX_IMAGE_SIZE_MB;
+    if (file.size > maxMb * 1024 * 1024) {
+      toast.error(
+        `"${file.name}" is too large. Max ${maxMb}MB for ${isVideo ? "video" : "image"}.`,
+      );
       return;
     }
     if (file.size === 0) {
@@ -593,10 +604,7 @@ function ColorVariantBlock({
             onClick={onOpenCamera}
           />
         </div>
-        <p className="text-[10px] text-gray-400">
-          JPG, PNG, WEBP, GIF, AVIF, MP4, WEBM, MOV. Max {MAX_MEDIA_SIZE_MB}MB
-          per file. Video upload korle GIF hoye save hobe.
-        </p>
+        <p className="text-[10px] text-gray-400">{MEDIA_HINT}</p>
       </div>
 
       {/* Per-color size toggle (independent of the global toggle) */}
@@ -768,6 +776,9 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
   const [currentStockInfo, setCurrentStockInfo] = useState<number | null>(null);
   const isEditMode = !!productId;
 
+  // video 15s er beshi hole trim dialog khule (prepareFiles), trimDialog form er baire render hoy
+  const { prepareFiles, trimDialog } = useVideoTrimmer();
+
   // [STOCK] create: store settings theke, edit: product er nijer hasStockManagement flag theke.
   // false hole main product, color variant, size variant, kothao stock field dekhabe na.
   const [stockEnabled, setStockEnabled] = useState(false);
@@ -883,13 +894,16 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
   };
 
   // ---------- Main product media (image / gif / video) ----------
-  const addImageFiles = (files: File[]) => {
+  // video 15s er beshi hole prepareFiles trim dialog dekhay, user skip korle oi file bad
+  const addImageFiles = async (files: File[]) => {
     const valid = filterMediaFiles(files);
     if (!valid.length) return;
-    setImageFiles((prev) => [...prev, ...valid]);
+    const ready = await prepareFiles(valid);
+    if (!ready.length) return;
+    setImageFiles((prev) => [...prev, ...ready]);
     setImagePreviews((prev) => [
       ...prev,
-      ...valid.map((f) => URL.createObjectURL(f)),
+      ...ready.map((f) => URL.createObjectURL(f)),
     ]);
   };
 
@@ -920,19 +934,21 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
   const getColorImageState = (uiKey: string): ImageState =>
     colorImages[uiKey] || { existing: [], files: [], previews: [] };
 
-  const addColorImageFiles = (uiKey: string, files: File[]) => {
+  const addColorImageFiles = async (uiKey: string, files: File[]) => {
     const valid = filterMediaFiles(files);
     if (!valid.length) return;
+    const ready = await prepareFiles(valid);
+    if (!ready.length) return;
     setColorImages((prev) => {
       const cur = prev[uiKey] || { existing: [], files: [], previews: [] };
       return {
         ...prev,
         [uiKey]: {
           ...cur,
-          files: [...cur.files, ...valid],
+          files: [...cur.files, ...ready],
           previews: [
             ...cur.previews,
-            ...valid.map((f) => URL.createObjectURL(f)),
+            ...ready.map((f) => URL.createObjectURL(f)),
           ],
         },
       };
@@ -1464,7 +1480,10 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
         formData.append("categoryId", String(data.categoryId));
 
       existingImages.forEach((url) => formData.append("images", url));
-      imageFiles.forEach((file, idx) => formData.append(`image${idx}`, file));
+      // video hole trim (start/end) file er naam e jay, backend oi part ta kete GIF banay
+      imageFiles.forEach((file, idx) =>
+        appendMediaFile(formData, `image${idx}`, file),
+      );
 
       // real form values
       const values = getValues();
@@ -1571,7 +1590,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
               ? getColorImageState(uiKey)
               : { files: [] as File[] };
             imgState.files.forEach((file) =>
-              formData.append(`variantImage_${idx}`, file),
+              appendMediaFile(formData, `variantImage_${idx}`, file),
             );
           });
         }
@@ -1582,8 +1601,8 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
         method: isEditMode ? "put" : "post",
         data: formData,
         headers: { "Content-Type": "multipart/form-data" },
-        // video upload + GIF convert e time lage, default timeout e fail na hoy
-        timeout: 5 * 60 * 1000,
+        // boro video upload + GIF convert e time lage (ekadhik video hole aro beshi)
+        timeout: 10 * 60 * 1000,
       });
 
       toast.success(
@@ -1615,6 +1634,11 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
       </div>
     );
   }
+
+  // notun video select kora thakle button e "Converting video..." dekhabe
+  const hasNewVideo =
+    imageFiles.some(isVideoFile) ||
+    Object.values(colorImages).some((s) => s.files.some(isVideoFile));
 
   return (
     <div className="px-4 pt-2 pb-3 min-h-[80vh]">
@@ -1797,11 +1821,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
               className="shrink-0"
             />
           </div>
-          <p className="text-[11px] text-gray-400">
-            Supported: JPG, PNG, WEBP, GIF, AVIF, MP4, WEBM, MOV. Max{" "}
-            {MAX_MEDIA_SIZE_MB}MB per file. Video upload korle GIF hoye save
-            hobe.
-          </p>
+          <p className="text-[11px] text-gray-400">{MEDIA_HINT}</p>
         </div>
 
         {/* VARIANT TOGGLES — independent */}
@@ -2066,7 +2086,9 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
             type="submit"
             label={
               isSubmitting
-                ? "Saving..."
+                ? hasNewVideo
+                  ? "Converting video..."
+                  : "Saving..."
                 : isEditMode
                   ? "Update Product"
                   : "Create Product"
@@ -2161,6 +2183,9 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
           </div>
         </div>
       </Dialog>
+
+      {/* VIDEO TRIM DIALOG */}
+      {trimDialog}
     </div>
   );
 }
