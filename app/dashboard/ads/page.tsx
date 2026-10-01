@@ -22,6 +22,9 @@ type AdRow = {
   updatedAt?: string;
 };
 
+const VIDEO_URL_REGEX = /\.(mp4|webm|mov)(\?.*)?$/i;
+const isVideoUrl = (url?: string | null) => !!url && VIDEO_URL_REGEX.test(url);
+
 // ─── Empty State ──────────────────────────────────────────────────────────────
 const EmptyState = () => (
   <div className="flex flex-col items-center justify-center h-full text-center py-12 px-4">
@@ -40,12 +43,12 @@ function Page() {
   const [visible, setVisible] = useState(false);
   const [editAdId, setEditAdId] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [togglingIds, setTogglingIds] = useState<string[]>([]);
 
-  // ── Fetch ──────────────────────────────────────────────────────────────────
-  const adsDataGet = async () => {
+  // ── Fetch (silent = true hole table spinner dekhabe na) ───────────────────
+  const adsDataGet = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const res = await axiosInstance.get("/api/ads");
       setAdsData(res.data.ads || []);
     } catch (error: any) {
@@ -55,7 +58,7 @@ function Page() {
         toast.error("Unexpected error occurred");
       }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -79,26 +82,32 @@ function Page() {
   };
 
   // ── Quick active toggle ────────────────────────────────────────────────────
-  const handleToggle = async (rowData: AdRow) => {
-    const next = !rowData.isActive;
-    setTogglingId(rowData._id);
-    // optimistic update
+  const setRowActive = (id: string, value: boolean) =>
     setAdsData((prev) =>
-      prev.map((a) => (a._id === rowData._id ? { ...a, isActive: next } : a))
+      prev.map((a) => (a._id === id ? { ...a, isActive: value } : a)),
     );
+
+  const handleToggle = async (id: string, next: boolean) => {
+    if (togglingIds.includes(id)) return;
+
+    setTogglingIds((prev) => [...prev, id]);
+    setRowActive(id, next); // optimistic update
+
     try {
-      await axiosInstance.put(`/api/ads/${rowData._id}`, { isActive: next });
+      const formData = new FormData();
+      formData.append("isActive", String(next));
+
+      await axiosInstance.put(`/api/ads/${id}`, formData);
+
       toast.success(next ? "Ad activated" : "Ad deactivated");
+
+      // response er upor bharosha na kore DB theke shotti value ene sync kori
+      await adsDataGet(true);
     } catch (err: any) {
-      // rollback
-      setAdsData((prev) =>
-        prev.map((a) =>
-          a._id === rowData._id ? { ...a, isActive: rowData.isActive } : a
-        )
-      );
+      setRowActive(id, !next); // rollback
       toast.error(err?.response?.data?.message || "Status update failed");
     } finally {
-      setTogglingId(null);
+      setTogglingIds((prev) => prev.filter((x) => x !== id));
     }
   };
 
@@ -119,15 +128,25 @@ function Page() {
       <button
         type="button"
         onClick={() => setPreviewUrl(rowData.mediaUrl)}
-        className="group relative block h-16 w-28 overflow-hidden rounded-xl border border-gray-200 bg-gray-100"
+        className="group relative block h-16 w-28 overflow-hidden rounded-xl border border-blue-200 bg-gray-100"
         title="Click to preview"
       >
-        <img
-          src={rowData.mediaUrl}
-          alt="Ad preview"
-          loading="lazy"
-          className="h-full w-full object-cover"
-        />
+        {isVideoUrl(rowData.mediaUrl) ? (
+          <video
+            src={`${rowData.mediaUrl}#t=0.1`}
+            muted
+            playsInline
+            preload="metadata"
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <img
+            src={rowData.mediaUrl}
+            alt="Ad preview"
+            loading="lazy"
+            className="h-full w-full object-cover"
+          />
+        )}
         <span className="absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition group-hover:bg-black/40 group-hover:opacity-100">
           <i className="pi pi-eye text-white text-lg" />
         </span>
@@ -139,14 +158,15 @@ function Page() {
     <div className="flex items-center gap-2">
       <InputSwitch
         checked={rowData.isActive}
-        disabled={togglingId === rowData._id}
-        onChange={() => handleToggle(rowData)}
+        disabled={togglingIds.includes(rowData._id)}
+        onChange={(e) => handleToggle(rowData._id, !!e.value)}
+        className="[&.p-inputswitch-checked_.p-inputswitch-slider]:!bg-blue-600 [&.p-inputswitch-checked:hover_.p-inputswitch-slider]:!bg-blue-700"
       />
       <span
         className={`px-2.5 py-1 rounded-full text-xs font-bold ${
           rowData.isActive
-            ? "bg-emerald-100 text-emerald-700"
-            : "bg-red-100 text-red-600"
+            ? "bg-green-100 text-green-800"
+            : "bg-red-100 text-red-800"
         }`}
       >
         {rowData.isActive ? "Active" : "Inactive"}
@@ -158,18 +178,30 @@ function Page() {
   const header = (
     <div
       className="flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-center p-2 sm:p-3 rounded-lg"
-      style={{ background: "linear-gradient(120deg,#f3be27,#e4a90e)" }}
+      style={{ background: "linear-gradient(120deg,#3b82f6,#1d4ed8)" }}
     >
       <div className="min-w-0">
-        <h2 className="text-sm sm:text-base font-semibold text-gray-800">
+        <h2 className="text-sm sm:text-base font-semibold text-white">
           Advertisements
         </h2>
-        <p className="text-xs text-gray-700">
+        <p className="text-xs text-blue-100">
           {adsData.length} ad{adsData.length !== 1 ? "s" : ""} total
         </p>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-1 sm:gap-2 items-stretch sm:items-center w-full sm:w-auto">
+        <Button
+          label="Refresh"
+          icon="pi pi-refresh"
+          onClick={() => adsDataGet()}
+          loading={loading}
+          className="w-full sm:w-auto"
+          style={{
+            background: "transparent",
+            color: "#fff",
+            border: "1px solid #93c5fd",
+          }}
+        />
         <Button
           label="Add Ad"
           icon="pi pi-plus"
@@ -180,19 +212,8 @@ function Page() {
           className="w-full sm:w-auto"
           style={{
             background: "#fff",
-            color: "#d89f00",
-            border: "1px solid #e0ac1f",
-          }}
-        />
-        <Button
-          label="Refresh"
-          icon="pi pi-refresh"
-          onClick={adsDataGet}
-          className="w-full sm:w-auto"
-          style={{
-            background: "#fff",
-            color: "#d89f00",
-            border: "1px solid #e0ac1f",
+            color: "#1d4ed8",
+            border: "1px solid #93c5fd",
           }}
         />
       </div>
@@ -213,7 +234,7 @@ function Page() {
         {adsData.length === 0 && !loading && <EmptyState />}
 
         {(adsData.length > 0 || loading) && (
-          <div className="mt-3 overflow-hidden rounded-lg border border-gray-200">
+          <div className="mt-3 overflow-hidden rounded-lg border border-blue-100">
             <DataTable
               value={adsData}
               loading={loading}
@@ -264,9 +285,9 @@ function Page() {
                         setVisible(true);
                       }}
                       style={{
-                        background: "#ffcf00",
-                        color: "#1d232f",
-                        border: "1px solid #e0ac1f",
+                        background: "#eff6ff",
+                        color: "#1d4ed8",
+                        border: "1px solid #bfdbfe",
                         padding: "4px 10px",
                         fontSize: "12px",
                       }}
@@ -288,7 +309,7 @@ function Page() {
         {/* ── Add / Edit Dialog ── */}
         <Dialog
           header={
-            <div className="flex items-center gap-3 bg-gradient-to-r from-blue-500 to-indigo-600 mb-2 p-3 rounded-t-lg">
+            <div className="flex items-center gap-3 bg-gradient-to-r from-blue-500 to-blue-600 mb-2 p-3 rounded-t-lg">
               <div className="bg-white/20 backdrop-blur-sm p-2 rounded-lg">
                 <i className="pi pi-megaphone text-white text-xl" />
               </div>
@@ -310,6 +331,7 @@ function Page() {
           onHide={closeForm}
           closable={false}
           dismissableMask={false}
+          draggable={false}
         >
           <AdsForm
             adId={editAdId}
@@ -328,14 +350,26 @@ function Page() {
           style={{ width: "min(95vw, 640px)" }}
           onHide={() => setPreviewUrl(null)}
           dismissableMask
+          draggable={false}
         >
-          {previewUrl && (
-            <img
-              src={previewUrl}
-              alt="Ad preview"
-              className="w-full rounded-lg border border-gray-200"
-            />
-          )}
+          {previewUrl &&
+            (isVideoUrl(previewUrl) ? (
+              <video
+                src={previewUrl}
+                controls
+                autoPlay
+                muted
+                loop
+                playsInline
+                className="w-full rounded-lg border border-blue-100 bg-black"
+              />
+            ) : (
+              <img
+                src={previewUrl}
+                alt="Ad preview"
+                className="w-full rounded-lg border border-blue-100"
+              />
+            ))}
         </Dialog>
 
         <ConfirmDialog />
