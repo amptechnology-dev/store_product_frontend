@@ -1,69 +1,58 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 
+// role -> login er por kothay jabe
+const ROLE_HOME: Record<string, string> = {
+  ADMIN: "/dashboard",
+  STORE: "/dashboard/store",
+};
+
+// shudhu ADMIN dekhte parbe
+const ADMIN_ONLY = ["/dashboard/users"];
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const loginToken = request.cookies.get("login-token")?.value;
+  const token = request.cookies.get("login-token")?.value;
 
-  console.log("Middleware running for:", pathname);
-
-  const secret = new TextEncoder().encode(process.env.TOKEN_SECRET);
-
-  // Redirect root "/" straight to /login
-  if (pathname === "/") {
+  if (pathname === "/" || pathname === "/store") {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  if (pathname === "/store") {
-    return NextResponse.redirect(new URL("/login", request.url));
+  let role: string | null = null;
+  if (token) {
+    try {
+      const secret = new TextEncoder().encode(process.env.TOKEN_SECRET);
+      const { payload } = await jwtVerify(token, secret);
+      role = (payload.role as string) || null;
+    } catch {
+      role = null;
+    }
   }
 
   if (pathname === "/login") {
-    if (!loginToken) {
-      return NextResponse.next();
+    if (role && ROLE_HOME[role]) {
+      return NextResponse.redirect(new URL(ROLE_HOME[role], request.url));
     }
-
-    try {
-      await jwtVerify(loginToken, secret);
-      return NextResponse.redirect(new URL("/profile", request.url));
-    } catch {
-      return NextResponse.next();
-    }
+    return NextResponse.next();
   }
 
-  if (pathname === "/profile") {
-    if (!loginToken) {
-      return NextResponse.redirect(new URL("/login", request.url));
-    }
-
-    try {
-      await jwtVerify(loginToken, secret);
-      return NextResponse.next();
-    } catch {
-      const res = NextResponse.redirect(new URL("/login", request.url));
-      res.cookies.set("login-token", "", { maxAge: 0, path: "/" });
-      return res;
-    }
+  // /dashboard/*
+  if (!role || !ROLE_HOME[role]) {
+    const res = NextResponse.redirect(new URL("/login", request.url));
+    if (token) res.cookies.set("login-token", "", { maxAge: 0, path: "/" });
+    return res;
   }
 
-  if (pathname.startsWith("/dashboard")) {
-    if (!loginToken) {
-      return NextResponse.redirect(new URL("/login", request.url));
-    }
-
-    try {
-      await jwtVerify(loginToken, secret);
-      return NextResponse.next();
-    } catch {
-      const res = NextResponse.redirect(new URL("/login", request.url));
-      res.cookies.set("login-token", "", { maxAge: 0, path: "/" });
-      return res;
-    }
+  const isAdminOnly = ADMIN_ONLY.some(
+    (p) => pathname === p || pathname.startsWith(p + "/"),
+  );
+  if (isAdminOnly && role !== "ADMIN") {
+    return NextResponse.redirect(new URL(ROLE_HOME[role], request.url));
   }
 
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/", "/store", "/login", "/profile", "/dashboard/:path*"],
+  matcher: ["/", "/store", "/login", "/dashboard/:path*"],
 };

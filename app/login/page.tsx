@@ -14,6 +14,11 @@ import Link from "next/link";
 const AUTH_TOKEN_KEY = "login-token";
 const AUTH_USER_KEY = "login-user";
 
+const ROLE_HOME: Record<string, string> = {
+  ADMIN: "/dashboard",
+  STORE: "/dashboard/store",
+};
+
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(false);
@@ -41,12 +46,15 @@ export default function LoginPage() {
       const token = res.data.token;
       dispatch(tokenSlice.actions.saveToken(token));
       localStorage.setItem(AUTH_TOKEN_KEY, token);
+      document.cookie = `${AUTH_TOKEN_KEY}=${token}; path=/; max-age=${60 * 60 * 24 * 2}; SameSite=Lax; Secure`;
+      let role: string | undefined;
       try {
         const profileResponse = await axiosInstance.get(
           "/api/login/profile-page",
         );
         const user = profileResponse.data?.user;
         if (user) {
+          role = user.role;
           localStorage.setItem(
             AUTH_USER_KEY,
             JSON.stringify({
@@ -62,7 +70,15 @@ export default function LoginPage() {
         console.error("Unable to load profile after login:", profileError);
       }
       window.dispatchEvent(new Event("auth-changed"));
-      router.push("/dashboard/store");
+      const target = role ? ROLE_HOME[role] : undefined;
+      if (!target) {
+        localStorage.removeItem(AUTH_TOKEN_KEY);
+        localStorage.removeItem(AUTH_USER_KEY);
+        document.cookie = `${AUTH_TOKEN_KEY}=; path=/; max-age=0`;
+        setError("This portal is only for Admin and Store accounts.");
+        return;
+      }
+      router.push(target);
     } catch (error: any) {
       setError(
         error.response?.data?.message || "Login failed. Please try again.",
