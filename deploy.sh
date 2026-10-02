@@ -91,7 +91,8 @@ if test -f "$CERT_PATH"; then
   git pull --ff-only || echo "git pull skipped"
 
   docker compose down || true
-  docker compose up -d --build --remove-orphans
+  docker compose pull
+  docker compose up -d --remove-orphans
 
   wait_for_network
 
@@ -155,7 +156,8 @@ echo "Certificate obtained successfully!"
 
 # App age start, jate nginx upstream resolve kore
 docker compose down || true
-docker compose up -d --build --remove-orphans
+docker compose pull
+docker compose up -d --remove-orphans
 
 wait_for_network
 
