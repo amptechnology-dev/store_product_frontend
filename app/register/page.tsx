@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Controller, useForm } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ToastContainer, toast } from "react-toastify";
@@ -22,15 +22,22 @@ export default function RegisterPage() {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // ---- OTP state ----
   const [isOtpModalOpen, setIsOtpModalOpen] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
 
+  // ---- Admin mode state ----
+  const [isAdminMode, setIsAdminMode] = useState(false);
+  const [adminCode, setAdminCode] = useState("");
+  const [adminCodeError, setAdminCodeError] = useState("");
+  const [showAdminCode, setShowAdminCode] = useState(false);
+
   const {
     register,
     handleSubmit,
-    control,
     reset,
     formState: { errors },
   } = useForm<RegisterFormValues>({
@@ -38,21 +45,61 @@ export default function RegisterPage() {
     defaultValues: { name: "", email: "", phone: "", password: "" },
   });
 
+  const toggleAdminMode = () => {
+    setIsAdminMode((prev) => !prev);
+    setAdminCode("");
+    setAdminCodeError("");
+    setShowAdminCode(false);
+  };
+
   const onSubmit = async (values: RegisterFormValues) => {
+    const payload = {
+      name: values.name.trim(),
+      email: values.email.trim(),
+      phone: values.phone.trim(),
+      password: values.password,
+    };
+
+    // ---------- ADMIN REGISTER ----------
+    if (isAdminMode) {
+      if (!adminCode.trim()) {
+        setAdminCodeError("Admin access code is required");
+        return;
+      }
+
+      setIsSubmitting(true);
+      try {
+        // Code server e verify hobe (client e hardcode rakha nirapod na)
+        const response = await axiosInstance.post(
+          "/api/register/create-admin",
+          { ...payload, adminCode: adminCode.trim() },
+        );
+        toast.success(response.data?.message || "Admin registered successfully");
+        reset();
+        toggleAdminMode();
+        router.push("/login");
+      } catch (error: any) {
+        const message =
+          error?.response?.data?.message || "Admin registration failed.";
+        setAdminCodeError(
+          error?.response?.status === 403 ? "Invalid admin access code" : "",
+        );
+        toast.error(message);
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
+    // ---------- STORE OWNER REGISTER (OTP flow) ----------
     setIsSubmitting(true);
     try {
-      const normalizedEmail = values.email.trim();
       const response = await axiosInstance.post(
         "/api/register/register-owner",
-        {
-          name: values.name.trim(),
-          email: normalizedEmail,
-          phone: values.phone.trim(),
-          password: values.password,
-        },
+        payload,
       );
       toast.success(response.data?.message || "Registration successful");
-      setRegisteredEmail(normalizedEmail);
+      setRegisteredEmail(payload.email);
       setOtp("");
       setIsOtpModalOpen(true);
       reset();
@@ -76,10 +123,7 @@ export default function RegisterPage() {
     try {
       const response = await axiosInstance.post(
         "/api/register/verify-email-otp",
-        {
-          email: registeredEmail.trim(),
-          otp: otp.trim(),
-        },
+        { email: registeredEmail.trim(), otp: otp.trim() },
       );
       toast.success(response.data?.message || "Email verified!");
       setIsOtpModalOpen(false);
@@ -93,36 +137,51 @@ export default function RegisterPage() {
     }
   };
 
-  const inputStyle = (hasError: boolean): React.CSSProperties => ({
-    width: "100%",
-    height: 44,
-    borderRadius: 12,
-    border: `1.5px solid ${hasError ? "#ef4444" : "var(--border)"}`,
+  // ---------------- Shared styles (login page er moto) ----------------
+  const focusStyle = (e: React.FocusEvent<HTMLInputElement>) => {
+    e.target.style.borderColor = "var(--brand-blue)";
+    e.target.style.boxShadow = "0 0 0 3px rgba(33,150,211,0.12)";
+  };
+
+  const blurStyle =
+    (hasError: boolean) => (e: React.FocusEvent<HTMLInputElement>) => {
+      e.target.style.borderColor = hasError ? "#ef4444" : "var(--border)";
+      e.target.style.boxShadow = "";
+    };
+
+  const inputStyle = (
+    hasError: boolean,
+    extra: React.CSSProperties = {},
+  ): React.CSSProperties => ({
+    height: 40,
+    paddingLeft: 36,
+    paddingRight: 12,
+    border: hasError ? "1.5px solid #ef4444" : "1.5px solid var(--border)",
     background: "var(--surface-soft)",
-    padding: "0 14px",
-    outline: "none",
-    fontSize: 14,
     color: "var(--foreground)",
-    transition: "border-color 0.2s, box-shadow 0.2s",
+    ...extra,
   });
 
-  const labelStyle: React.CSSProperties = {
-    fontSize: 14,
-    fontWeight: 600,
-    color: "var(--brand-primary-dark)",
-    marginBottom: 4,
-    display: "block",
-  };
+  const labelClass = "text-sm font-semibold block mb-1";
+  const labelColor = { color: "var(--brand-primary-dark)" };
+  const iconClass =
+    "absolute left-3 top-1/2 -translate-y-1/2 text-base leading-none";
+  const inputClass = "w-full rounded-xl text-sm outline-none transition-all";
+
+  const FieldError = ({ message }: { message?: string }) =>
+    message ? (
+      <small className="text-red-500 text-xs mt-0.5 block">⚠️ {message}</small>
+    ) : null;
 
   return (
     <main
-      className="min-h-screen flex items-center justify-center px-4 py-2"
+      className="h-dvh overflow-y-auto flex px-4 py-3"
       style={{
         background:
           "radial-gradient(circle at 10% 12%, rgba(26,58,107,0.12), transparent 40%), radial-gradient(circle at 90% 88%, rgba(33,150,211,0.14), transparent 40%), linear-gradient(145deg, #f5f8ff 0%, #eef4ff 50%, #f0f6ff 100%)",
       }}
     >
-      <div className="w-full" style={{ maxWidth: 520 }}>
+      <div className="w-full m-auto" style={{ maxWidth: 520 }}>
         <div
           className="rounded-3xl overflow-hidden"
           style={{
@@ -131,7 +190,7 @@ export default function RegisterPage() {
             background: "var(--surface)",
           }}
         >
-          {/* Accent bar */}
+          {/* Top accent bar */}
           <div
             className="h-1.5 w-full"
             style={{
@@ -140,52 +199,44 @@ export default function RegisterPage() {
             }}
           />
 
-          <div className="p-4">
+          <div className="px-5 pt-3 pb-4">
             {/* Logo + Brand */}
-            <div className="flex items-center gap-3 mb-3">
+            <div className="flex flex-col items-center text-center mb-2">
               <img
                 src="/img/photos/amp-logo.png"
                 alt="AMP Logo"
-                className="h-10 w-10 rounded-xl object-contain shadow-md shrink-0"
+                className="h-10 w-10 rounded-xl object-contain shadow-md mb-1.5"
                 style={{ border: "1px solid var(--border)" }}
               />
-              <div>
-                <p
-                  className="text-base font-black tracking-tight leading-none"
-                  style={{ color: "var(--brand-primary)" }}
-                >
-                  AMP{" "}
-                  <span style={{ color: "var(--brand-orange)" }}>Shopping</span>
-                </p>
-                <p className="text-[11px]" style={{ color: "var(--muted)" }}>
-                  Store Management Portal
-                </p>
-                <p
-                  className="text-xs font-bold"
-                  style={{ color: "var(--brand-primary-dark)" }}
-                >
-                  Create your account 🚀
-                </p>
-              </div>
+              <p
+                className="text-lg font-black tracking-tight leading-tight"
+                style={{ color: "var(--brand-primary)" }}
+              >
+                AMP{" "}
+                <span style={{ color: "var(--brand-orange)" }}>
+                  Estore Management System
+                </span>
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>
+                {isAdminMode
+                  ? "Create admin account 🛡️"
+                  : "Create your account 🚀"}
+              </p>
+              <div
+                className="w-full h-px mt-2"
+                style={{ background: "var(--border)" }}
+              />
             </div>
-
-            <div
-              className="w-full h-px mb-3"
-              style={{ background: "var(--border)" }}
-            />
 
             {/* Form */}
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-2">
               {/* Name */}
               <div>
-                <label style={{ ...labelStyle, marginBottom: 2 }}>
+                <label className={labelClass} style={labelColor}>
                   Name <span style={{ color: "#ef4444" }}>*</span>
                 </label>
                 <div className="relative">
-                  <span
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-sm leading-none"
-                    style={{ color: "var(--muted)" }}
-                  >
+                  <span className={iconClass} style={{ color: "var(--muted)" }}>
                     👤
                   </span>
                   <input
@@ -193,42 +244,22 @@ export default function RegisterPage() {
                     placeholder="Your full name"
                     autoComplete="name"
                     {...register("name")}
-                    style={{
-                      ...inputStyle(!!errors.name),
-                      height: 40,
-                      paddingLeft: 34,
-                      fontSize: 13,
-                    }}
-                    onFocus={(e) => {
-                      e.target.style.borderColor = "var(--brand-blue)";
-                      e.target.style.boxShadow =
-                        "0 0 0 3px rgba(33,150,211,0.12)";
-                    }}
-                    onBlur={(e) => {
-                      e.target.style.borderColor = errors.name
-                        ? "#ef4444"
-                        : "var(--border)";
-                      e.target.style.boxShadow = "";
-                    }}
+                    className={inputClass}
+                    style={inputStyle(!!errors.name)}
+                    onFocus={focusStyle}
+                    onBlur={blurStyle(!!errors.name)}
                   />
                 </div>
-                {errors.name && (
-                  <small className="text-red-500 text-[11px] block">
-                    ⚠️ {errors.name.message}
-                  </small>
-                )}
+                <FieldError message={errors.name?.message} />
               </div>
 
               {/* Email */}
               <div>
-                <label style={{ ...labelStyle, marginBottom: 2 }}>
-                  Email <span style={{ color: "#ef4444" }}>*</span>
+                <label className={labelClass} style={labelColor}>
+                  Email address <span style={{ color: "#ef4444" }}>*</span>
                 </label>
                 <div className="relative">
-                  <span
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-sm leading-none"
-                    style={{ color: "var(--muted)" }}
-                  >
+                  <span className={iconClass} style={{ color: "var(--muted)" }}>
                     ✉️
                   </span>
                   <input
@@ -237,134 +268,123 @@ export default function RegisterPage() {
                     placeholder="your@email.com"
                     autoComplete="email"
                     {...register("email")}
-                    style={{
-                      ...inputStyle(!!errors.email),
-                      height: 40,
-                      paddingLeft: 34,
-                      fontSize: 13,
-                    }}
-                    onFocus={(e) => {
-                      e.target.style.borderColor = "var(--brand-blue)";
-                      e.target.style.boxShadow =
-                        "0 0 0 3px rgba(33,150,211,0.12)";
-                    }}
-                    onBlur={(e) => {
-                      e.target.style.borderColor = errors.email
-                        ? "#ef4444"
-                        : "var(--border)";
-                      e.target.style.boxShadow = "";
-                    }}
+                    className={inputClass}
+                    style={inputStyle(!!errors.email)}
+                    onFocus={focusStyle}
+                    onBlur={blurStyle(!!errors.email)}
                   />
                 </div>
-                {errors.email && (
-                  <small className="text-red-500 text-[11px] block">
-                    ⚠️ {errors.email.message}
-                  </small>
-                )}
+                <FieldError message={errors.email?.message} />
               </div>
 
-              {/* Phone */}
-              <div>
-                <label style={{ ...labelStyle, marginBottom: 2 }}>
-                  Phone <span style={{ color: "#ef4444" }}>*</span>
-                </label>
-                <div className="relative">
-                  <span
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-sm leading-none"
-                    style={{ color: "var(--muted)" }}
-                  >
-                    📱
-                  </span>
-                  <input
-                    id="phone"
-                    type="tel"
-                    placeholder="10-digit phone number"
-                    autoComplete="tel"
-                    {...register("phone")}
-                    style={{
-                      ...inputStyle(!!errors.phone),
-                      height: 40,
-                      paddingLeft: 34,
-                      fontSize: 13,
-                    }}
-                    onFocus={(e) => {
-                      e.target.style.borderColor = "var(--brand-blue)";
-                      e.target.style.boxShadow =
-                        "0 0 0 3px rgba(33,150,211,0.12)";
-                    }}
-                    onBlur={(e) => {
-                      e.target.style.borderColor = errors.phone
-                        ? "#ef4444"
-                        : "var(--border)";
-                      e.target.style.boxShadow = "";
-                    }}
-                  />
+              {/* Phone + Password (ek line e) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label className={labelClass} style={labelColor}>
+                    Phone <span style={{ color: "#ef4444" }}>*</span>
+                  </label>
+                  <div className="relative">
+                    <span
+                      className={iconClass}
+                      style={{ color: "var(--muted)" }}
+                    >
+                      📱
+                    </span>
+                    <input
+                      id="phone"
+                      type="tel"
+                      placeholder="10-digit number"
+                      autoComplete="tel"
+                      {...register("phone")}
+                      className={inputClass}
+                      style={inputStyle(!!errors.phone)}
+                      onFocus={focusStyle}
+                      onBlur={blurStyle(!!errors.phone)}
+                    />
+                  </div>
+                  <FieldError message={errors.phone?.message} />
                 </div>
-                {errors.phone && (
-                  <small className="text-red-500 text-[11px] block">
-                    ⚠️ {errors.phone.message}
-                  </small>
-                )}
+
+                <div>
+                  <label className={labelClass} style={labelColor}>
+                    Password <span style={{ color: "#ef4444" }}>*</span>
+                  </label>
+                  <div className="relative">
+                    <span
+                      className={iconClass}
+                      style={{ color: "var(--muted)" }}
+                    >
+                      🔒
+                    </span>
+                    <input
+                      id="password"
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Min 6 characters"
+                      autoComplete="new-password"
+                      {...register("password")}
+                      className={inputClass}
+                      style={inputStyle(!!errors.password, {
+                        paddingRight: 44,
+                      })}
+                      onFocus={focusStyle}
+                      onBlur={blurStyle(!!errors.password)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((p) => !p)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-lg leading-none"
+                      aria-label="Toggle password visibility"
+                    >
+                      {showPassword ? "🙈" : "👁️"}
+                    </button>
+                  </div>
+                  <FieldError message={errors.password?.message} />
+                </div>
               </div>
 
-              {/* Password */}
-              <div>
-                <label style={{ ...labelStyle, marginBottom: 2 }}>
-                  Password <span style={{ color: "#ef4444" }}>*</span>
-                </label>
-                <Controller
-                  name="password"
-                  control={control}
-                  render={({ field }) => (
-                    <div className="relative">
-                      <span
-                        className="absolute left-3 top-1/2 -translate-y-1/2 text-sm leading-none"
-                        style={{ color: "var(--muted)" }}
-                      >
-                        🔒
-                      </span>
-                      <input
-                        id="password"
-                        type={showPassword ? "text" : "password"}
-                        placeholder="Min 6 characters"
-                        autoComplete="new-password"
-                        value={field.value || ""}
-                        onChange={(e) => field.onChange(e.target.value)}
-                        style={{
-                          ...inputStyle(!!errors.password),
-                          height: 40,
-                          paddingLeft: 34,
-                          paddingRight: 44,
-                          fontSize: 13,
-                        }}
-                        onFocus={(e) => {
-                          e.target.style.borderColor = "var(--brand-blue)";
-                          e.target.style.boxShadow =
-                            "0 0 0 3px rgba(33,150,211,0.12)";
-                        }}
-                        onBlur={(e) => {
-                          e.target.style.borderColor = errors.password
-                            ? "#ef4444"
-                            : "var(--border)";
-                          e.target.style.boxShadow = "";
-                        }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword((p) => !p)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-base leading-none"
-                      >
-                        {showPassword ? "🙈" : "👁️"}
-                      </button>
-                    </div>
-                  )}
-                />
-                {errors.password && (
-                  <small className="text-red-500 text-[11px] block">
-                    ⚠️ {errors.password.message}
-                  </small>
-                )}
-              </div>
+              {/* Admin Access Code (sudhu admin mode e) */}
+              {isAdminMode && (
+                <div>
+                  <label className={labelClass} style={labelColor}>
+                    Admin Access Code{" "}
+                    <span style={{ color: "#ef4444" }}>*</span>
+                  </label>
+                  <div className="relative">
+                    <span
+                      className={iconClass}
+                      style={{ color: "var(--muted)" }}
+                    >
+                      🛡️
+                    </span>
+                    <input
+                      id="adminCode"
+                      type={showAdminCode ? "text" : "password"}
+                      placeholder="Enter admin access code"
+                      autoComplete="off"
+                      value={adminCode}
+                      onChange={(e) => {
+                        setAdminCode(e.target.value);
+                        if (adminCodeError) setAdminCodeError("");
+                      }}
+                      className={inputClass}
+                      style={inputStyle(!!adminCodeError, {
+                        paddingRight: 44,
+                      })}
+                      onFocus={focusStyle}
+                      onBlur={blurStyle(!!adminCodeError)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowAdminCode((p) => !p)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-lg leading-none"
+                      aria-label="Toggle admin code visibility"
+                    >
+                      {showAdminCode ? "🙈" : "👁️"}
+                    </button>
+                  </div>
+                  <FieldError message={adminCodeError} />
+                </div>
+              )}
 
               {/* Submit */}
               <button
@@ -372,37 +392,45 @@ export default function RegisterPage() {
                 disabled={isSubmitting}
                 className="w-full rounded-xl font-bold text-sm text-white transition-all hover:-translate-y-0.5 hover:shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
                 style={{
-                  height: 40,
-                  background:
-                    "linear-gradient(110deg, var(--brand-primary), var(--brand-blue))",
+                  height: 42,
+                  marginTop: 4,
+                  background: isAdminMode
+                    ? "linear-gradient(110deg, var(--brand-orange), #c2410c)"
+                    : "linear-gradient(110deg, var(--brand-primary), var(--brand-blue))",
                   boxShadow: "0 4px 18px rgba(26,58,107,0.3)",
                 }}
               >
-                {isSubmitting ? "⏳ Creating account..." : "→ Create Account"}
+                {isSubmitting
+                  ? "⏳ Creating account..."
+                  : isAdminMode
+                    ? "→ Create Admin Account"
+                    : "→ Create Account"}
+              </button>
+
+              {/* Register as Admin toggle */}
+              <button
+                type="button"
+                onClick={toggleAdminMode}
+                disabled={isSubmitting}
+                className="w-full rounded-xl font-semibold text-xs transition-all hover:-translate-y-0.5 disabled:opacity-60 disabled:cursor-not-allowed"
+                style={{
+                  height: 34,
+                  border: "1.5px solid var(--brand-orange)",
+                  background: isAdminMode
+                    ? "rgba(232,89,12,0.08)"
+                    : "transparent",
+                  color: "var(--brand-orange)",
+                }}
+              >
+                {isAdminMode
+                  ? "← Register as Store Owner instead"
+                  : "🛡️ Register as a Super Admin"}
               </button>
             </form>
 
-            {/* Divider */}
-            <div className="flex items-center gap-3 my-2">
-              <div
-                className="flex-1 h-px"
-                style={{ background: "var(--border)" }}
-              />
-              <span
-                className="text-xs font-semibold"
-                style={{ color: "var(--muted)" }}
-              >
-                OR
-              </span>
-              <div
-                className="flex-1 h-px"
-                style={{ background: "var(--border)" }}
-              />
-            </div>
-
             {/* Login link */}
             <div
-              className="rounded-xl px-4 py-2 text-center text-xs"
+              className="rounded-xl px-4 py-2 mt-2 text-center text-xs"
               style={{
                 background: "var(--surface-soft)",
                 border: "1px solid var(--border)",
@@ -419,23 +447,11 @@ export default function RegisterPage() {
                 Sign in →
               </Link>
             </div>
-
-            {/* Back */}
-            <div className="mt-1.5 text-center">
-              <button
-                type="button"
-                onClick={() => router.push("/store")}
-                className="text-xs font-semibold hover:underline"
-                style={{ color: "var(--muted)" }}
-              >
-                ← Back to Store
-              </button>
-            </div>
           </div>
         </div>
       </div>
 
-      {/* OTP Modal */}
+      {/* OTP Modal (sudhu store owner flow) */}
       {isOtpModalOpen && (
         <div
           role="dialog"
@@ -459,7 +475,6 @@ export default function RegisterPage() {
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Accent bar */}
             <div
               className="h-1.5 w-full"
               style={{
@@ -468,11 +483,11 @@ export default function RegisterPage() {
               }}
             />
 
-            <div className="p-4">
+            <div className="px-5 pt-3 pb-4">
               {/* Header */}
               <div className="flex flex-col items-center text-center mb-2">
                 <div
-                  className="h-12 w-12 rounded-2xl flex items-center justify-center text-2xl mb-2 shadow-md"
+                  className="h-10 w-10 rounded-xl flex items-center justify-center text-xl mb-1.5 shadow-md"
                   style={{
                     background: "var(--surface-soft)",
                     border: "1px solid var(--border)",
@@ -481,7 +496,7 @@ export default function RegisterPage() {
                   📧
                 </div>
                 <p
-                  className="text-lg font-black"
+                  className="text-lg font-black leading-tight"
                   style={{ color: "var(--brand-primary-dark)" }}
                 >
                   Verify your email
@@ -490,41 +505,47 @@ export default function RegisterPage() {
                   Enter the OTP sent to your email address
                 </p>
                 <div
-                  className="w-full h-px mt-3"
+                  className="w-full h-px mt-2"
                   style={{ background: "var(--border)" }}
                 />
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {/* Email readonly */}
                 <div>
-                  <label style={labelStyle}>Email</label>
+                  <label className={labelClass} style={labelColor}>
+                    Email
+                  </label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-base leading-none">
+                    <span
+                      className={iconClass}
+                      style={{ color: "var(--muted)" }}
+                    >
                       ✉️
                     </span>
                     <input
                       type="email"
                       value={registeredEmail}
                       readOnly
-                      style={{
-                        ...inputStyle(false),
-                        paddingLeft: 36,
-                        background: "var(--surface-soft)",
+                      className={inputClass}
+                      style={inputStyle(false, {
                         color: "var(--muted)",
                         cursor: "not-allowed",
-                      }}
+                      })}
                     />
                   </div>
                 </div>
 
                 {/* OTP */}
                 <div>
-                  <label style={labelStyle}>
+                  <label className={labelClass} style={labelColor}>
                     OTP <span style={{ color: "#ef4444" }}>*</span>
                   </label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-base leading-none">
+                    <span
+                      className={iconClass}
+                      style={{ color: "var(--muted)" }}
+                    >
                       🔑
                     </span>
                     <input
@@ -532,17 +553,20 @@ export default function RegisterPage() {
                       inputMode="numeric"
                       placeholder="Enter OTP"
                       value={otp}
+                      autoFocus
                       onChange={(e) => setOtp(e.target.value)}
-                      style={{ ...inputStyle(false), paddingLeft: 36 }}
-                      onFocus={(e) => {
-                        e.target.style.borderColor = "var(--brand-blue)";
-                        e.target.style.boxShadow =
-                          "0 0 0 3px rgba(33,150,211,0.12)";
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !isVerifyingOtp) {
+                          handleVerifyOtp();
+                        }
                       }}
-                      onBlur={(e) => {
-                        e.target.style.borderColor = "var(--border)";
-                        e.target.style.boxShadow = "";
-                      }}
+                      className={inputClass}
+                      style={inputStyle(false, {
+                        letterSpacing: "0.2em",
+                        fontWeight: 600,
+                      })}
+                      onFocus={focusStyle}
+                      onBlur={blurStyle(false)}
                     />
                   </div>
                 </div>
@@ -553,14 +577,12 @@ export default function RegisterPage() {
                     type="button"
                     disabled={isVerifyingOtp}
                     onClick={() => {
-                      if (!isVerifyingOtp) {
-                        setIsOtpModalOpen(false);
-                        setOtp("");
-                      }
+                      setIsOtpModalOpen(false);
+                      setOtp("");
                     }}
                     className="flex-1 rounded-xl font-bold text-sm transition-all hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{
-                      height: 44,
+                      height: 42,
                       border: "1.5px solid var(--border)",
                       background: "var(--surface-soft)",
                       color: "var(--muted)",
@@ -574,7 +596,7 @@ export default function RegisterPage() {
                     onClick={handleVerifyOtp}
                     className="flex-1 rounded-xl font-bold text-sm text-white transition-all hover:-translate-y-0.5 hover:shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
                     style={{
-                      height: 44,
+                      height: 42,
                       background:
                         "linear-gradient(110deg, var(--brand-primary), var(--brand-blue))",
                       boxShadow: "0 4px 18px rgba(26,58,107,0.3)",

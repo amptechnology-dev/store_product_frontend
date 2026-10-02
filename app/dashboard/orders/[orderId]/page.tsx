@@ -29,6 +29,17 @@ const WORKER_ENDPOINT = "/api/worker/all-workers";
 // Adjust to your karigars' actual country code (e.g. "880" for BD numbers).
 const DEFAULT_COUNTRY_CODE = "91";
 
+// Cancel reason validation
+const CANCEL_REASON_MIN = 3;
+const CANCEL_REASON_MAX = 300;
+const getCancelReasonError = (value: string) => {
+  const v = value.trim();
+  if (!v) return "Cancellation reason is required";
+  if (v.length < CANCEL_REASON_MIN)
+    return `Reason must be at least ${CANCEL_REASON_MIN} characters`;
+  return "";
+};
+
 type KarigarRow = {
   _id: string;
   name: string;
@@ -180,6 +191,7 @@ function OrderDetailsPage() {
 
   const [cancelDialogVisible, setCancelDialogVisible] = useState(false);
   const [cancelNote, setCancelNote] = useState("");
+  const [cancelError, setCancelError] = useState("");
 
   // ---- Multi-select state ----
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -216,14 +228,16 @@ function OrderDetailsPage() {
   };
 
   const applyStatusChange = async (status: OrderStatus, note?: string) => {
-    if (!order) return;
+    if (!order) return false;
     try {
       setUpdating(true);
       const res = await updateOrderStatusApi(order._id, status, note);
       toast.success(res.data.message || `Order marked as ${status}`);
       setOrder((prev) => (prev ? { ...prev, ...res.data.order } : prev));
+      return true;
     } catch (err: any) {
       toast.error(err?.response?.data?.message || "Status update failed");
+      return false;
     } finally {
       setUpdating(false);
     }
@@ -234,6 +248,7 @@ function OrderDetailsPage() {
 
     if (newStatus === "CANCELLED") {
       setCancelNote("");
+      setCancelError("");
       setCancelDialogVisible(true);
       return;
     }
@@ -247,9 +262,22 @@ function OrderDetailsPage() {
     });
   };
 
-  const confirmCancelOrder = async () => {
-    await applyStatusChange("CANCELLED", cancelNote.trim() || undefined);
+  const closeCancelDialog = () => {
     setCancelDialogVisible(false);
+    setCancelNote("");
+    setCancelError("");
+  };
+
+  const confirmCancelOrder = async () => {
+    // Remarks mandatory
+    const err = getCancelReasonError(cancelNote);
+    if (err) {
+      setCancelError(err);
+      return;
+    }
+
+    const ok = await applyStatusChange("CANCELLED", cancelNote.trim());
+    if (ok) closeCancelDialog();
   };
 
   // ---- Selection helpers ----
@@ -602,28 +630,51 @@ function OrderDetailsPage() {
           </div>
         </div>
 
-        {/* Cancel reason dialog */}
+        {/* Cancel reason dialog (remarks mandatory) */}
         <Dialog
           header="Cancel Order"
           visible={cancelDialogVisible}
           style={{ width: "28rem" }}
-          onHide={() => setCancelDialogVisible(false)}
+          breakpoints={{ "641px": "95vw" }}
+          onHide={closeCancelDialog}
         >
-          <p className="text-sm text-gray-600 mb-2">Cancellation reason (optional):</p>
+          <label className="text-sm font-semibold text-gray-700 block mb-2">
+            Cancellation reason <span className="text-red-500">*</span>
+          </label>
           <InputTextarea
             value={cancelNote}
-            onChange={(e) => setCancelNote(e.target.value)}
+            onChange={(e) => {
+              setCancelNote(e.target.value);
+              if (cancelError) setCancelError("");
+            }}
+            onBlur={() => setCancelError(getCancelReasonError(cancelNote))}
             rows={3}
-            className="w-full"
+            maxLength={CANCEL_REASON_MAX}
+            className={`w-full ${cancelError ? "p-invalid" : ""}`}
             placeholder="e.g. Out of stock"
+            autoFocus
           />
+          <div className="flex justify-between items-start mt-1">
+            {cancelError ? (
+              <small className="text-red-500 flex items-center gap-1">
+                <i className="pi pi-exclamation-circle"></i>
+                {cancelError}
+              </small>
+            ) : (
+              <span />
+            )}
+            <small className="text-gray-400">
+              {cancelNote.length}/{CANCEL_REASON_MAX}
+            </small>
+          </div>
           <div className="flex justify-end gap-2 mt-4">
-            <Button label="Close" text onClick={() => setCancelDialogVisible(false)} />
+            <Button label="Close" text onClick={closeCancelDialog} />
             <Button
               label="Confirm Cancel"
               severity="danger"
               onClick={confirmCancelOrder}
               loading={updating}
+              disabled={cancelNote.trim().length < CANCEL_REASON_MIN}
             />
           </div>
         </Dialog>

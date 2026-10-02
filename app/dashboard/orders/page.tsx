@@ -29,6 +29,17 @@ import { useNotifications } from "@/lib/NotificationContext";
 
 const ENDPOINT = "/api/order/store-orders";
 
+// Cancel reason validation
+const CANCEL_REASON_MIN = 3;
+const CANCEL_REASON_MAX = 300;
+const getCancelReasonError = (value: string) => {
+  const v = value.trim();
+  if (!v) return "Cancellation reason is required";
+  if (v.length < CANCEL_REASON_MIN)
+    return `Reason must be at least ${CANCEL_REASON_MIN} characters`;
+  return "";
+};
+
 const EmptyState = () => (
   <div className="flex flex-col items-center justify-center h-full text-center py-12">
     <div className="text-6xl mb-4">🧾</div>
@@ -74,6 +85,7 @@ function OrdersPage() {
     orderId: string | null;
   }>({ visible: false, orderId: null });
   const [cancelNote, setCancelNote] = useState("");
+  const [cancelError, setCancelError] = useState("");
 
   // stale response guard
   const requestIdRef = useRef(0);
@@ -162,8 +174,10 @@ function OrdersPage() {
           prev.map((o) => (o._id === orderId ? mergeOrder(o, res.data.order) : o)),
         );
       }
+      return true;
     } catch (err: any) {
       toast.error(err?.response?.data?.message || "Status update failed");
+      return false;
     } finally {
       setUpdatingId(null);
     }
@@ -172,6 +186,7 @@ function OrdersPage() {
   const requestStatusChange = (order: OrderRow, newStatus: OrderStatus) => {
     if (newStatus === "CANCELLED") {
       setCancelNote("");
+      setCancelError("");
       setCancelDialog({ visible: true, orderId: order._id });
       return;
     }
@@ -188,16 +203,25 @@ function OrdersPage() {
   const closeCancelDialog = () => {
     setCancelDialog({ visible: false, orderId: null });
     setCancelNote("");
+    setCancelError("");
   };
 
   const confirmCancelOrder = async () => {
     if (!cancelDialog.orderId) return;
-    await applyStatusChange(
+
+    // Remarks mandatory
+    const err = getCancelReasonError(cancelNote);
+    if (err) {
+      setCancelError(err);
+      return;
+    }
+
+    const ok = await applyStatusChange(
       cancelDialog.orderId,
       "CANCELLED",
-      cancelNote.trim() || undefined,
+      cancelNote.trim(),
     );
-    closeCancelDialog();
+    if (ok) closeCancelDialog();
   };
 
   const statusTemplate = (rowData: OrderRow) => (
@@ -504,7 +528,7 @@ function OrdersPage() {
           </DataTable>
         )}
 
-        {/* Cancel reason dialog */}
+        {/* Cancel reason dialog (remarks mandatory) */}
         <Dialog
           header="Cancel Order"
           visible={cancelDialog.visible}
@@ -512,14 +536,35 @@ function OrdersPage() {
           breakpoints={{ "641px": "95vw" }}
           onHide={closeCancelDialog}
         >
-          <p className="text-sm text-gray-600 mb-2">Cancellation reason (optional):</p>
+          <label className="text-sm font-semibold text-gray-700 block mb-2">
+            Cancellation reason <span className="text-red-500">*</span>
+          </label>
           <InputTextarea
             value={cancelNote}
-            onChange={(e) => setCancelNote(e.target.value)}
+            onChange={(e) => {
+              setCancelNote(e.target.value);
+              if (cancelError) setCancelError("");
+            }}
+            onBlur={() => setCancelError(getCancelReasonError(cancelNote))}
             rows={3}
-            className="w-full"
+            maxLength={CANCEL_REASON_MAX}
+            className={`w-full ${cancelError ? "p-invalid" : ""}`}
             placeholder="e.g. Out of stock"
+            autoFocus
           />
+          <div className="flex justify-between items-start mt-1">
+            {cancelError ? (
+              <small className="text-red-500 flex items-center gap-1">
+                <i className="pi pi-exclamation-circle"></i>
+                {cancelError}
+              </small>
+            ) : (
+              <span />
+            )}
+            <small className="text-gray-400">
+              {cancelNote.length}/{CANCEL_REASON_MAX}
+            </small>
+          </div>
           <div className="flex justify-end gap-2 mt-4">
             <Button label="Close" text onClick={closeCancelDialog} />
             <Button
@@ -527,6 +572,7 @@ function OrdersPage() {
               severity="danger"
               onClick={confirmCancelOrder}
               loading={updatingId === cancelDialog.orderId}
+              disabled={cancelNote.trim().length < CANCEL_REASON_MIN}
             />
           </div>
         </Dialog>
