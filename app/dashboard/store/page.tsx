@@ -15,6 +15,9 @@ import { ConfirmDialog, confirmDialog } from "primereact/confirmdialog";
 import { Button } from "primereact/button";
 import { formatDate } from "@/helper/DateTime";
 import StoreForm from "@/components/store/StoreForm";
+// ✅ NEW
+import StoreQRCode from "@/components/store/StoreQRCode";
+import QRScannerDialog from "@/components/store/QRScannerDialog";
 
 const EmptyState = () => (
   <div className="flex flex-col items-center justify-center h-full text-center py-10">
@@ -38,6 +41,9 @@ function StoreListPage() {
   const [visible, setVisible] = useState(false);
   const [editStoreId, setEditStoreId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"card" | "table">("card");
+
+  // ✅ NEW
+  const [scannerVisible, setScannerVisible] = useState(false);
 
   const [pagination, setPagination] = useState({
     page: 1,
@@ -508,7 +514,7 @@ function StoreListPage() {
                     </p>
 
                     <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-                      {/* ✅ FIX: purely display text, <a href> na — direct browser e khulbe na */}
+                      {/* purely display text, <a href> na — direct browser e khulbe na */}
                       <span
                         className="text-xs sm:text-sm font-medium break-all flex-1 select-all"
                         style={{ color: "var(--foreground)" }}
@@ -531,7 +537,6 @@ function StoreListPage() {
                             padding: "6px 12px",
                           }}
                         />
-                        {/* ✅ FIX: external-link (browser open) er bodole WhatsApp share button */}
                         <Button
                           icon="pi pi-whatsapp"
                           label="Share"
@@ -556,6 +561,49 @@ function StoreListPage() {
                       This link only works inside the app — share it via
                       WhatsApp or copy and send it to your customers.
                     </p>
+
+                    {/* ✅ NEW: QR code + Scan QR section */}
+                    <div
+                      className="mt-4 pt-4 border-t flex flex-col sm:flex-row items-center gap-4"
+                      style={{ borderColor: "var(--border)" }}
+                    >
+                      <StoreQRCode
+                        url={storeUrl}
+                        storeName={myStore.storeName}
+                        size={160}
+                      />
+
+                      <div className="flex flex-col gap-2 items-center sm:items-start text-center sm:text-left">
+                        <p
+                          className="text-xs sm:text-sm font-semibold flex items-center gap-1.5"
+                          style={{ color: "var(--brand-primary-dark)" }}
+                        >
+                          <i className="pi pi-qrcode"></i>
+                          Your store QR code
+                        </p>
+                        <p
+                          className="text-[11px]"
+                          style={{ color: "var(--muted)" }}
+                        >
+                          Customers can scan this QR to open your store
+                          directly in the app. Download and print it for your
+                          shop.
+                        </p>
+                        <Button
+                          icon="pi pi-camera"
+                          label="Scan QR"
+                          onClick={() => setScannerVisible(true)}
+                          className="text-xs"
+                          style={{
+                            background:
+                              "linear-gradient(110deg, var(--brand-orange), var(--brand-amber))",
+                            color: "#fff",
+                            border: "none",
+                            padding: "6px 12px",
+                          }}
+                        />
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -668,6 +716,12 @@ function StoreListPage() {
               }}
             />
           </Dialog>
+
+          {/* ✅ NEW: QR Scanner dialog */}
+          <QRScannerDialog
+            visible={scannerVisible}
+            onHide={() => setScannerVisible(false)}
+          />
 
           <ConfirmDialog />
           <ToastContainer position="top-right" />

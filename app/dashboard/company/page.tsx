@@ -1,4 +1,3 @@
-// app/dashboard/company/page.tsx  (tomar project-er page structure onujayi path ta nio)
 "use client";
 
 import React, { useEffect, useState } from "react";
@@ -11,7 +10,7 @@ import { Button } from "primereact/button";
 import { ToastContainer, toast } from "react-toastify";
 import axiosInstance from "@/service/axios.service";
 
-// Backend validation er sathe match kora (empty string allowed, jate admin field clear korte pare)
+// Matches backend validation (empty string is allowed so the admin can clear a field)
 const phoneRegex = /^\+?[0-9]{10,15}$/;
 const optionalPhone = z
   .string()
@@ -27,7 +26,7 @@ const companySchema = z.object({
     .string()
     .trim()
     .regex(phoneRegex, "Enter a valid phone number (10-15 digits)"),
-  companyEmail: z.string().trim().email("Invalid email"),
+  companyEmail: optionalEmail,
 
   whatsappNo: optionalPhone,
   supportPhone: optionalPhone,
@@ -119,7 +118,7 @@ function CompanyPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // API null/undefined field dile "" bosiye form e set kora
+  // Fill "" for any null/undefined field returned by the API
   const toFormValues = (c: any): CompanyFormData => ({
     companyName: c?.companyName ?? "",
     companyPhone: c?.companyPhone ?? "",
@@ -169,10 +168,10 @@ function CompanyPage() {
   const onSubmit = async (data: CompanyFormData) => {
     setIsSubmitting(true);
     try {
-      // Backend .strict() -- tai sudhu form field gulo-i pathano hocche (_id, createdAt etc. noy)
+      // Backend uses .strict(), so only the form fields are sent (no _id, createdAt, etc.)
       const res = await axiosInstance.put(ENDPOINT, data);
       toast.success(res.data?.message || "Company details saved successfully");
-      reset(toFormValues(res.data?.data)); // isDirty reset + saved data sync
+      reset(toFormValues(res.data?.data)); // resets isDirty and syncs the saved data
       setHasData(true);
     } catch (error: any) {
       const errs = error?.response?.data?.errors;
@@ -249,9 +248,7 @@ function CompanyPage() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className={labelClass}>
-                    Company Email <span className="text-red-500">*</span>
-                  </label>
+                  <label className={labelClass}>Company Email</label>
                   <InputText
                     className={inputClass}
                     placeholder="info@company.com"
