@@ -6,6 +6,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { InputText } from "primereact/inputtext";
 import { Dropdown } from "primereact/dropdown";
+import { Checkbox } from "primereact/checkbox";
+import { InputSwitch } from "primereact/inputswitch";
 import { Button } from "primereact/button";
 import { toast } from "react-toastify";
 import axiosInstance from "@/service/axios.service";
@@ -92,6 +94,7 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
     control,
     reset,
     setValue,
+    getValues,
     watch,
     formState: { errors },
   } = useForm<BannerFormData>({
@@ -101,8 +104,9 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
     defaultValues: {
       name: "",
       storeId: undefined,
-      categoryId: undefined,
+      categoryIds: [],
       productId: undefined,
+      offerBanner: false,
     },
   });
 
@@ -119,7 +123,9 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
   const [productsLoading, setProductsLoading] = useState(false);
 
   const selectedStoreId = watch("storeId");
-  const selectedCategoryId = watch("categoryId");
+  const selectedCategoryIds = watch("categoryIds");
+  // array identity badle, tai effect e string key use kora hocche
+  const categoryKey = (selectedCategoryIds || []).join(",");
 
   // object URL memory leak roke
   useEffect(() => {
@@ -176,20 +182,15 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedStoreId]);
 
-  // store ba category change hole product list refresh (category dile shudhu oi category r product)
+  // store ba category change hole product list refresh (category dile shudhu oi category gulor product)
   useEffect(() => {
     if (isValidObjectId(selectedStoreId)) {
-      fetchProducts(
-        selectedStoreId as string,
-        isValidObjectId(selectedCategoryId as string)
-          ? (selectedCategoryId as string)
-          : undefined,
-      );
+      fetchProducts(selectedStoreId as string, categoryKey);
     } else {
       setProducts([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedStoreId, selectedCategoryId]);
+  }, [selectedStoreId, categoryKey]);
 
   const fetchBannerData = async () => {
     try {
@@ -200,6 +201,7 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
       const banner = res.data.banner;
 
       setValue("name", banner.name);
+      setValue("offerBanner", !!banner.offerBanner);
 
       if (banner.image) {
         setExistingMedia({
@@ -215,11 +217,10 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
           : banner.storeId;
       if (storeId) setValue("storeId", storeId);
 
-      const categoryId =
-        typeof banner.categoryId === "object"
-          ? banner.categoryId?._id
-          : banner.categoryId;
-      setValue("categoryId", categoryId || null);
+      const categoryIds: string[] = (banner.categoryIds || []).map((c: any) =>
+        typeof c === "object" ? c?._id : c,
+      );
+      setValue("categoryIds", categoryIds.filter(Boolean));
 
       const productId =
         typeof banner.productId === "object"
@@ -266,11 +267,11 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
     }
   };
 
-  const fetchProducts = async (storeId: string, categoryId?: string) => {
+  const fetchProducts = async (storeId: string, categoryIds: string) => {
     try {
       setProductsLoading(true);
       const res = await axiosInstance.get("/api/banner/product-options", {
-        params: { storeId, ...(categoryId ? { categoryId } : {}) },
+        params: { storeId, ...(categoryIds ? { categoryIds } : {}) },
       });
       setProducts(res.data?.products || []);
     } catch (err: any) {
@@ -301,15 +302,16 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
         formData.append("storeId", String(data.storeId));
       }
 
-      // category/product optional: khali ("") pathale backend e remove / nai hisebe dhore
-      formData.append(
-        "categoryId",
-        data.categoryId ? String(data.categoryId) : "",
-      );
+      // categoryIds JSON string e jay ([] = kono category nai / shob remove)
+      formData.append("categoryIds", JSON.stringify(data.categoryIds || []));
+
+      // product optional: khali ("") pathale backend e remove hisebe dhore
       formData.append(
         "productId",
         data.productId ? String(data.productId) : "",
       );
+
+      formData.append("offerBanner", String(!!data.offerBanner));
 
       // video hole trim (start/end) file er naam e jay, backend oi part ta kete GIF banay
       if (mediaFile) {
@@ -384,83 +386,143 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
               )}
             </div>
 
-            {/* <div className="space-y-1">
-              <label className="text-sm font-semibold text-gray-700">
-                Store <span className="text-red-500">*</span>
-              </label>
+            {/* OFFER BANNER TOGGLE */}
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2">
+              <div className="min-w-0">
+                <label
+                  htmlFor="offerBanner"
+                  className="text-sm font-semibold text-gray-800 flex items-center gap-1"
+                >
+                  <span>🎁</span> Offer Banner
+                </label>
+                <small className="text-gray-600 block">
+                  When turned on, this banner appears in the offer section and
+                  users are notified.
+                </small>
+              </div>
               <Controller
-                name="storeId"
+                name="offerBanner"
                 control={control}
                 render={({ field }) => (
-                  <Dropdown
-                    value={field.value}
-                    options={stores.map((s) => ({
-                      label: s.storeName,
-                      value: s._id,
-                    }))}
-                    optionLabel="label"
-                    optionValue="value"
-                    placeholder="Select store"
-                    className="w-full"
-                    disabled={isEditMode}
-                    onChange={(e) => {
-                      field.onChange(e.value);
-                      // store change hole ager category ar product valid na
-                      setValue("categoryId", null);
-                      setValue("productId", null);
-                    }}
+                  <InputSwitch
+                    inputId="offerBanner"
+                    checked={!!field.value}
+                    onChange={(e) => field.onChange(!!e.value)}
                   />
                 )}
               />
-              {errors.storeId && (
-                <small className="text-red-500">
-                  {errors.storeId.message as string}
-                </small>
-              )}
-            </div> */}
+            </div>
 
+            {/* CATEGORIES (multiple, checkbox) */}
             <div className="space-y-1">
               <label className="text-sm font-semibold text-gray-700">
-                Category{" "}
-                <span className="text-gray-400 font-normal">(optional)</span>
+                Categories{" "}
+                <span className="text-gray-400 font-normal">
+                  (optional
+                  {(selectedCategoryIds?.length ?? 0) > 0
+                    ? `, ${selectedCategoryIds?.length} selected`
+                    : ""}
+                  )
+                </span>
               </label>
               <Controller
-                name="categoryId"
+                name="categoryIds"
                 control={control}
-                render={({ field }) => (
-                  <Dropdown
-                    value={field.value || null}
-                    options={categories.map((c) => ({
-                      label: c.name,
-                      value: c._id,
-                    }))}
-                    optionLabel="label"
-                    optionValue="value"
-                    placeholder={
-                      !isValidObjectId(selectedStoreId)
-                        ? "Select store first"
-                        : categoriesLoading
-                          ? "Loading categories..."
-                          : categories.length === 0
-                            ? "No categories found"
-                            : "Select category"
-                    }
-                    className="w-full"
-                    showClear
-                    disabled={
-                      !isValidObjectId(selectedStoreId) || categoriesLoading
-                    }
-                    onChange={(e) => {
-                      field.onChange(e.value ?? null);
-                      // category change hole ager product ei category r na o hote pare
+                render={({ field }) => {
+                  const selected: string[] = field.value || [];
+
+                  const toggle = (id: string, checked: boolean) => {
+                    const next = checked
+                      ? [...selected, id]
+                      : selected.filter((x) => x !== id);
+                    field.onChange(next);
+
+                    // select kora product er category ekhon list e na thakle product clear
+                    const currentProductId = getValues("productId");
+                    const currentProduct = products.find(
+                      (p) => p._id === currentProductId,
+                    );
+                    if (
+                      currentProduct &&
+                      next.length > 0 &&
+                      !next.includes(String(currentProduct.categoryId))
+                    ) {
                       setValue("productId", null);
-                    }}
-                  />
-                )}
+                    }
+                  };
+
+                  if (!isValidObjectId(selectedStoreId)) {
+                    return (
+                      <div className="text-sm text-gray-400 border rounded-lg p-3">
+                        Select store first
+                      </div>
+                    );
+                  }
+                  if (categoriesLoading) {
+                    return (
+                      <div className="text-sm text-gray-400 border rounded-lg p-3">
+                        Loading categories...
+                      </div>
+                    );
+                  }
+                  if (categories.length === 0) {
+                    return (
+                      <div className="text-sm text-gray-400 border rounded-lg p-3">
+                        No categories found
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="border rounded-lg p-2">
+                      <div className="flex justify-end gap-3 mb-1 text-xs">
+                        <button
+                          type="button"
+                          className="text-blue-600 hover:underline"
+                          onClick={() =>
+                            field.onChange(categories.map((c) => c._id))
+                          }
+                        >
+                          Select all
+                        </button>
+                        <button
+                          type="button"
+                          className="text-gray-500 hover:underline"
+                          onClick={() => {
+                            field.onChange([]);
+                          }}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                      <div className="max-h-40 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-2 pr-1">
+                        {categories.map((c) => (
+                          <div
+                            key={c._id}
+                            className="flex items-center gap-2 min-w-0"
+                          >
+                            <Checkbox
+                              inputId={`cat-${c._id}`}
+                              checked={selected.includes(c._id)}
+                              onChange={(e) => toggle(c._id, !!e.checked)}
+                            />
+                            <label
+                              htmlFor={`cat-${c._id}`}
+                              className="text-sm text-gray-700 cursor-pointer truncate"
+                              title={c.name}
+                            >
+                              {c.name}
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                }}
               />
-              {errors.categoryId && (
+              {errors.categoryIds && (
                 <small className="text-red-500">
-                  {errors.categoryId.message as string}
+                  {errors.categoryIds.message as string}
                 </small>
               )}
             </div>
@@ -533,14 +595,13 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
             />
           ) : null}
 
-          {/* selected clip info (video hole) */}
           {trim && (
             <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-1.5 text-xs text-blue-800">
               <i className="pi pi-clock"></i>
               <span>
-                Selected clip: {formatTime(trim.start)} –{" "}
-                {formatTime(trim.end)} ({(trim.end - trim.start).toFixed(1)}s).
-                GIF hoye save hobe.
+                Selected clip: {formatTime(trim.start)} – {formatTime(trim.end)}{" "}
+                ({(trim.end - trim.start).toFixed(1)}s). It will be saved as a
+                GIF.
               </span>
             </div>
           )}
@@ -579,8 +640,8 @@ function BannerForm({ bannerId, onClose, onSuccess }: BannerFormProps) {
 
           <small className="text-gray-500 block">
             Image max {MAX_IMAGE_MB}MB, video max {MAX_VIDEO_MB}MB (mp4, webm,
-            mov). Video max {MAX_CLIP_SECONDS} sec (trim korte parben), GIF
-            hoye save hobe (max 1080p, 30MB er moddhe).
+            mov). Video max {MAX_CLIP_SECONDS} sec (you can trim it), saved as a
+            GIF (max 1080p, within 30MB).
           </small>
         </div>
 

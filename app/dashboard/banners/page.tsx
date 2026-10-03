@@ -22,6 +22,7 @@ type BannerRow = {
   mediaType?: "image" | "video";
   bannerURL?: string;
   isActive?: boolean;
+  offerBanner?: boolean;
   storeId?:
     | string
     | {
@@ -29,6 +30,7 @@ type BannerRow = {
         storeName?: string;
         storeUniqueId?: string;
       };
+  categoryIds?: (string | { _id?: string; name?: string })[];
   createdAt?: string;
 };
 
@@ -180,6 +182,57 @@ const getStoreName = (storeId?: BannerRow["storeId"]) => {
   if (!storeId) return "-";
   return typeof storeId === "object" ? storeId.storeName || "-" : "-";
 };
+
+// populated category gulor naam (id hole skip)
+const getCategoryNames = (categoryIds?: BannerRow["categoryIds"]): string[] =>
+  (categoryIds || [])
+    .map((c) => (typeof c === "object" ? c?.name || "" : ""))
+    .filter(Boolean);
+
+function CategoryChips({
+  categoryIds,
+  max = 3,
+}: {
+  categoryIds?: BannerRow["categoryIds"];
+  max?: number;
+}) {
+  const names = getCategoryNames(categoryIds);
+  if (names.length === 0) {
+    return (
+      <span className="px-2 py-0.5 rounded-full text-[11px] bg-gray-100 text-gray-600">
+        General
+      </span>
+    );
+  }
+  const visible = names.slice(0, max);
+  const extra = names.length - visible.length;
+  return (
+    <div className="flex flex-wrap gap-1" title={names.join(", ")}>
+      {visible.map((n, i) => (
+        <span
+          key={`${n}-${i}`}
+          className="px-2 py-0.5 rounded-full text-[11px] bg-blue-50 text-blue-700 border border-blue-100 max-w-[110px] truncate"
+        >
+          {n}
+        </span>
+      ))}
+      {extra > 0 && (
+        <span className="px-2 py-0.5 rounded-full text-[11px] bg-gray-100 text-gray-600">
+          +{extra}
+        </span>
+      )}
+    </div>
+  );
+}
+
+const OfferBadge = ({ offer }: { offer?: boolean }) =>
+  offer ? (
+    <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-800">
+      🎁 Offer
+    </span>
+  ) : (
+    <span className="text-gray-400 text-xs">-</span>
+  );
 
 // media load fail hole initials fallback
 function BannerThumb({
@@ -366,13 +419,20 @@ function Page() {
 
   // Card view: video hole viewport e thakle auto-play (muted loop)
   const bannerCardImage = (rowData: BannerRow) => (
-    <BannerThumb
-      banner={rowData}
-      autoPlay
-      showBadge
-      sizeClass="w-full h-28 sm:h-32 md:h-36 lg:h-40 rounded-t-lg"
-      initialsClass="text-3xl"
-    />
+    <div className="relative">
+      <BannerThumb
+        banner={rowData}
+        autoPlay
+        showBadge
+        sizeClass="w-full h-28 sm:h-32 md:h-36 lg:h-40 rounded-t-lg"
+        initialsClass="text-3xl"
+      />
+      {rowData.offerBanner && (
+        <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-500 text-white shadow">
+          🎁 Offer
+        </span>
+      )}
+    </div>
   );
 
   // Table view: chhoto thumbnail, video hover korle play hoy
@@ -539,11 +599,17 @@ function Page() {
                         </h3>
                       </div>
 
-                      <div className="text-xs text-gray-700 space-y-0.5 flex-1">
+                      <div className="text-xs text-gray-700 space-y-1 flex-1">
                         <p>
                           <span className="font-medium">🏪 Store:</span>{" "}
                           {getStoreName(banner.storeId)}
                         </p>
+                        <div className="flex items-start gap-1 min-w-0">
+                          <span className="font-medium shrink-0">
+                            🗂️ Categories:
+                          </span>
+                          <CategoryChips categoryIds={banner.categoryIds} />
+                        </div>
                         <p className="flex items-center gap-1 min-w-0">
                           <span className="font-medium shrink-0">🔗 URL:</span>
                           <BannerLink url={banner.bannerURL} />
@@ -560,6 +626,7 @@ function Page() {
                         >
                           {banner.isActive ? "✓ Active" : "✗ Inactive"}
                         </span>
+                        {banner.offerBanner && <OfferBadge offer />}
                       </div>
 
                       <div className="flex gap-1 justify-between mt-auto pt-1">
@@ -652,6 +719,18 @@ function Page() {
             <Column
               header="Store"
               body={(row: BannerRow) => getStoreName(row.storeId)}
+            />
+            <Column
+              header="Categories"
+              body={(row: BannerRow) => (
+                <div className="max-w-[220px]">
+                  <CategoryChips categoryIds={row.categoryIds} />
+                </div>
+              )}
+            />
+            <Column
+              header="Offer"
+              body={(row: BannerRow) => <OfferBadge offer={row.offerBanner} />}
             />
             <Column
               header="URL"

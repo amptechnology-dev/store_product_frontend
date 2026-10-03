@@ -129,8 +129,9 @@ export const bannerURLSchema = zod
 export const createBannerSchema = zod.object({
   name: zod.string().trim().min(1, "Banner name is required"),
   storeId: zod.string().min(1, "Store is required"),
-  categoryId: zod.string().nullable().optional(), 
+  categoryIds: zod.array(zod.string()),
   productId: zod.string().nullable().optional(),
+  offerBanner: zod.boolean(),
 });
 
 export const updateBannerSchema = createBannerSchema.partial();

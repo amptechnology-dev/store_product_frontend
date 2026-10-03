@@ -18,8 +18,15 @@ const ROLE_HOME: Record<string, string> = {
   STORE: "/dashboard/store",
 };
 
+// roles that may sign in to this portal (USER accounts are handled in the mobile app)
+const PORTAL_ROLES = ["ADMIN", "STORE"];
+const ROLE_LABELS: Record<string, string> = {
+  ADMIN: "Admin",
+  STORE: "Store",
+};
+
 // ---------------- CAPTCHA CONFIG ----------------
-// Confusing char (0/O, 1/I/L) bad deya hoyeche
+// Confusing characters (0/O, 1/I/L) are excluded
 const CAPTCHA_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const CAPTCHA_LENGTH = 5;
 const CAPTCHA_W = 200;
@@ -43,6 +50,8 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // filled when the backend finds more than one matching account (ADMIN + STORE)
+  const [roleOptions, setRoleOptions] = useState<string[]>([]);
   const router = useRouter();
   const dispatch = useAppDispatch();
 
@@ -58,19 +67,29 @@ export default function LoginPage() {
     register,
     control,
     handleSubmit,
+    getValues,
+    watch,
     formState: { errors },
   } = useForm<LoginForm>({
     resolver: zodResolver(LoginSchema),
   });
 
-  // Canvas e captcha draw kora
+  const emailValue = watch("email");
+  const passwordValue = watch("password");
+
+  // credentials changed, so any previous role choice is no longer valid
+  useEffect(() => {
+    setRoleOptions([]);
+  }, [emailValue, passwordValue]);
+
+  // Draw the captcha on the canvas
   const drawCaptcha = useCallback((text: string) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Retina / HiDPI screen e sharp rakhar jonno
+    // Keep it sharp on Retina / HiDPI screens
     const dpr = window.devicePixelRatio || 1;
     canvas.width = CAPTCHA_W * dpr;
     canvas.height = CAPTCHA_H * dpr;
@@ -85,7 +104,7 @@ export default function LoginPage() {
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, CAPTCHA_W, CAPTCHA_H);
 
-    // Noise: background dot
+    // Noise: background dots
     for (let i = 0; i < 60; i++) {
       ctx.fillStyle = `rgba(${randInt(160)},${randInt(160)},${randInt(220)},${randFloat(0.15, 0.45)})`;
       ctx.beginPath();
@@ -99,7 +118,7 @@ export default function LoginPage() {
       ctx.fill();
     }
 
-    // Noise: curve line (text er niche)
+    // Noise: curves (behind the text)
     for (let i = 0; i < 4; i++) {
       ctx.strokeStyle = `rgba(${randInt(150)},${randInt(150)},${randInt(220)},0.35)`;
       ctx.lineWidth = randFloat(1, 2);
@@ -140,7 +159,7 @@ export default function LoginPage() {
       ctx.restore();
     });
 
-    // Strike-through wavy lines (text er upore, OCR bot kothate)
+    // Wavy strike-through lines (over the text, to confuse OCR bots)
     for (let i = 0; i < 3; i++) {
       ctx.strokeStyle = `rgba(${randInt(120)},${randInt(120)},${randInt(200)},0.6)`;
       ctx.lineWidth = randFloat(1.2, 2);
@@ -153,7 +172,7 @@ export default function LoginPage() {
       ctx.stroke();
     }
 
-    // Noise: foreground dot
+    // Noise: foreground dots
     for (let i = 0; i < 20; i++) {
       ctx.fillStyle = `rgba(${randInt(120)},${randInt(120)},${randInt(200)},0.5)`;
       ctx.fillRect(randFloat(0, CAPTCHA_W), randFloat(0, CAPTCHA_H), 2, 2);
@@ -171,39 +190,42 @@ export default function LoginPage() {
     [drawCaptcha],
   );
 
-  // Client e-i generate (SSR hydration mismatch ariye cholar jonno)
+  // Generate on the client only (avoids SSR hydration mismatch)
   useEffect(() => {
     refreshCaptcha();
   }, [refreshCaptcha]);
 
-  const onSubmit = async (data: LoginForm) => {
+  const clearAuth = () => {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    localStorage.removeItem(AUTH_USER_KEY);
+    document.cookie = `${AUTH_TOKEN_KEY}=; path=/; max-age=0`;
+  };
+
+  // Sends the login request. `role` is only sent after the user picks one.
+  const performLogin = async (data: LoginForm, role?: string) => {
     setError("");
-
-    // Captcha check (API call er age)
-    if (!captchaInput.trim()) {
-      setCaptchaError("Please enter the captcha");
-      return;
-    }
-    if (captchaInput.trim().toUpperCase() !== captchaText) {
-      refreshCaptcha("Captcha does not match. Try a new one.");
-      return;
-    }
-
     setLoading(true);
     try {
-      const res = await axiosInstance.post("/api/login", data);
+      const res = await axiosInstance.post("/api/login", {
+        email: data.email,
+        password: data.password,
+        allowedRoles: PORTAL_ROLES,
+        ...(role ? { role } : {}),
+      });
+
       const token = res.data.token;
       dispatch(tokenSlice.actions.saveToken(token));
       localStorage.setItem(AUTH_TOKEN_KEY, token);
       document.cookie = `${AUTH_TOKEN_KEY}=${token}; path=/; max-age=${60 * 60 * 24 * 2}; SameSite=Lax; Secure`;
-      let role: string | undefined;
+
+      let resolvedRole: string | undefined = res.data?.user?.role;
       try {
         const profileResponse = await axiosInstance.get(
           "/api/login/profile-page",
         );
         const user = profileResponse.data?.user;
         if (user) {
-          role = user.role;
+          resolvedRole = user.role;
           localStorage.setItem(
             AUTH_USER_KEY,
             JSON.stringify({
@@ -218,26 +240,60 @@ export default function LoginPage() {
       } catch (profileError) {
         console.error("Unable to load profile after login:", profileError);
       }
+
       window.dispatchEvent(new Event("auth-changed"));
-      const target = role ? ROLE_HOME[role] : undefined;
+
+      const target = resolvedRole ? ROLE_HOME[resolvedRole] : undefined;
       if (!target) {
-        localStorage.removeItem(AUTH_TOKEN_KEY);
-        localStorage.removeItem(AUTH_USER_KEY);
-        document.cookie = `${AUTH_TOKEN_KEY}=; path=/; max-age=0`;
+        clearAuth();
         setError("This portal is only for Admin and Store accounts.");
+        setRoleOptions([]);
         refreshCaptcha();
         return;
       }
       router.push(target);
-    } catch (error: any) {
-      setError(
-        error.response?.data?.message || "Login failed. Please try again.",
-      );
-      // Login fail hole notun captcha
+    } catch (err: any) {
+      const errData = err.response?.data;
+
+      // same email + password matched more than one account, let the user choose
+      if (errData?.requireRole && Array.isArray(errData.roles)) {
+        const options = errData.roles.filter((r: string) =>
+          PORTAL_ROLES.includes(r),
+        );
+        if (options.length > 1) {
+          setRoleOptions(options);
+          return;
+        }
+      }
+
+      setError(errData?.message || "Login failed. Please try again.");
+      setRoleOptions([]);
+      // new captcha after every failed attempt
       refreshCaptcha();
     } finally {
       setLoading(false);
     }
+  };
+
+  const onSubmit = async (data: LoginForm) => {
+    setError("");
+
+    // Captcha check (before the API call)
+    if (!captchaInput.trim()) {
+      setCaptchaError("Please enter the captcha");
+      return;
+    }
+    if (captchaInput.trim().toUpperCase() !== captchaText) {
+      refreshCaptcha("Captcha does not match. Try a new one.");
+      return;
+    }
+
+    await performLogin(data);
+  };
+
+  // captcha was already verified on the first submit, so it is not asked again
+  const handleRoleSelect = (role: string) => {
+    performLogin(getValues(), role);
   };
 
   const focusStyle = (e: React.FocusEvent<HTMLInputElement>) => {
@@ -433,7 +489,7 @@ export default function LoginPage() {
                 </label>
 
                 <div className="flex items-center gap-2">
-                  {/* Canvas wrapper: select / copy / drag / right-click block */}
+                  {/* Canvas wrapper: blocks select / copy / drag / right-click */}
                   <div
                     className="relative rounded-lg overflow-hidden flex-shrink-0 select-none"
                     style={{
@@ -496,7 +552,7 @@ export default function LoginPage() {
                       setCaptchaInput(e.target.value.toUpperCase());
                       if (captchaError) setCaptchaError("");
                     }}
-                    // Paste / copy / cut / drop block: manually type korte hobe
+                    // Paste / copy / cut / drop are blocked, the code must be typed manually
                     onPaste={(e) => e.preventDefault()}
                     onCopy={(e) => e.preventDefault()}
                     onCut={(e) => e.preventDefault()}
@@ -532,21 +588,57 @@ export default function LoginPage() {
                 )}
               </div>
 
-              {/* Submit */}
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full rounded-xl font-bold text-sm text-white transition-all hover:-translate-y-0.5 hover:shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
-                style={{
-                  height: 42,
-                  marginTop: 4,
-                  background:
-                    "linear-gradient(110deg, var(--brand-primary), var(--brand-blue))",
-                  boxShadow: "0 4px 18px rgba(26,58,107,0.3)",
-                }}
-              >
-                {loading ? "⏳ Signing in..." : "→ Sign in"}
-              </button>
+              {/* Role selection (only when the same email + password matches both accounts) */}
+              {roleOptions.length > 0 ? (
+                <div
+                  className="rounded-xl p-3"
+                  style={{
+                    border: "1px solid var(--border)",
+                    background: "var(--surface-soft)",
+                  }}
+                >
+                  <p
+                    className="text-sm font-semibold mb-2"
+                    style={{ color: "var(--brand-primary-dark)" }}
+                  >
+                    This email has more than one account. Sign in as:
+                  </p>
+                  <div className="flex gap-2">
+                    {roleOptions.map((r) => (
+                      <button
+                        key={r}
+                        type="button"
+                        disabled={loading}
+                        onClick={() => handleRoleSelect(r)}
+                        className="flex-1 rounded-xl font-bold text-sm transition-all hover:-translate-y-0.5 disabled:opacity-60 disabled:cursor-not-allowed"
+                        style={{
+                          height: 40,
+                          background: "#fff",
+                          border: "1.5px solid var(--brand-blue)",
+                          color: "var(--brand-primary)",
+                        }}
+                      >
+                        {loading ? "⏳" : ROLE_LABELS[r] || r}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full rounded-xl font-bold text-sm text-white transition-all hover:-translate-y-0.5 hover:shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
+                  style={{
+                    height: 42,
+                    marginTop: 4,
+                    background:
+                      "linear-gradient(110deg, var(--brand-primary), var(--brand-blue))",
+                    boxShadow: "0 4px 18px rgba(26,58,107,0.3)",
+                  }}
+                >
+                  {loading ? "⏳ Signing in..." : "→ Sign in"}
+                </button>
+              )}
             </form>
           </div>
         </div>
