@@ -15,6 +15,8 @@ import { Checkbox } from "primereact/checkbox";
 import { useProfileStore } from "@/lib/store/profileStore";
 import storeTypeList from "@/lib/storetype.json";
 
+const DEFAULT_COUNTRY = "India";
+
 // Zod Schema
 // Store details (contact, whatsapp, location) ekhane optional rakha hoyeche,
 // karon ADMIN create korar shomoy ei field gulo form e thake na.
@@ -108,6 +110,7 @@ const getStoreFormSchema = (
     }
 
     // ---------- Store details (sudhu jokhon form e dekhano hocche) ----------
+    // Note: country read-only (always India), tai ekhane validate kora hoy na
     if (requireStoreDetails) {
       if ((values.contactNo?.trim().length || 0) < 10) {
         context.addIssue({
@@ -138,14 +141,6 @@ const getStoreFormSchema = (
           code: z.ZodIssueCode.custom,
           path: ["state"],
           message: "State is required",
-        });
-      }
-
-      if ((values.country?.trim().length || 0) < 2) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["country"],
-          message: "Country is required",
         });
       }
     }
@@ -419,7 +414,7 @@ function StoreForm({
       long: 0,
       area: "",
       state: "",
-      country: "India",
+      country: DEFAULT_COUNTRY,
       isActive: true,
       isVerify: false,
     },
@@ -435,7 +430,7 @@ function StoreForm({
   const selectedLong = watch("long");
   const selectedArea = watch("area");
   const selectedState = watch("state") || "";
-  const selectedCountry = watch("country") || "India";
+  const selectedCountry = watch("country") || DEFAULT_COUNTRY;
   const mapCenter = STATE_CENTERS[selectedState] || [
     INDIA_CENTER.latitude,
     INDIA_CENTER.longitude,
@@ -518,7 +513,7 @@ function StoreForm({
 
     const stateName =
       address.state || address.state_district || selectedState || "";
-    const countryName = address.country || "India";
+    const countryName = address.country || DEFAULT_COUNTRY;
 
     setValue("lat", latitude, { shouldDirty: true, shouldValidate: true });
     setValue("long", longitude, { shouldDirty: true, shouldValidate: true });
@@ -635,7 +630,7 @@ function StoreForm({
         address.state_district ||
         selectedState ||
         "";
-      const countryName = address.country || selectedCountry || "India";
+      const countryName = address.country || selectedCountry || DEFAULT_COUNTRY;
 
       setValue("area", detailedLocation, {
         shouldDirty: true,
@@ -682,7 +677,8 @@ function StoreForm({
       setValue("long", store.long || 0);
       setValue("area", store.address?.area?.trim() || "");
       setValue("state", store.address?.state?.trim() || "");
-      setValue("country", store.address?.country?.trim() || "");
+      // country DB te na thakle default India (UI te jeta dekhacche setai form value hobe)
+      setValue("country", store.address?.country?.trim() || DEFAULT_COUNTRY);
       setLocationQuery(store.address?.area?.trim() || "");
       setSelectedLocationLabel(store.address?.area?.trim() || "");
 
@@ -690,20 +686,20 @@ function StoreForm({
 
       setIsActive(typeof store.isActive === "boolean" ? store.isActive : true);
       setIsVerify(typeof store.isVerify === "boolean" ? store.isVerify : false);
-
-      setLoading(false);
     } catch (error: any) {
       toast.error(
         error.response?.data?.message || "Failed to fetch store data",
       );
       onClose();
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const files = Array.from(e.target.files);
-      setImageFiles([...imageFiles, ...files]);
+      setImageFiles((prev) => [...prev, ...files]);
 
       files.forEach((file) => {
         const reader = new FileReader();
@@ -712,6 +708,9 @@ function StoreForm({
         };
         reader.readAsDataURL(file);
       });
+
+      // same file dobara select korle onChange fire hoy
+      e.target.value = "";
     }
   };
 
@@ -754,10 +753,14 @@ function StoreForm({
 
         formData.append("address[area]", data.area || "");
         formData.append("address[state]", data.state || "");
-        formData.append("address[country]", data.country || "");
+        formData.append(
+          "address[country]",
+          data.country?.trim() || DEFAULT_COUNTRY,
+        );
 
-        existingImages.forEach((url, index) => {
-          formData.append(`existingImages[${index}]`, url);
+        // backend `req.body.images` e remaining (purano) image URL gulo pore
+        existingImages.forEach((url) => {
+          formData.append("images", url);
         });
 
         imageFiles.forEach((file, index) => {
@@ -1064,7 +1067,7 @@ function StoreForm({
                   control={control}
                   render={({ field }) => (
                     <InputText
-                      value={field.value || "India"}
+                      value={field.value || DEFAULT_COUNTRY}
                       readOnly
                       className="w-full p-2 border rounded-lg border-yellow-300 bg-gray-100 text-gray-700"
                     />
@@ -1079,7 +1082,7 @@ function StoreForm({
 
               <div className="space-y-1">
                 <label className="text-sm font-semibold text-gray-700">
-                  State
+                  State <span className="text-red-500">*</span>
                 </label>
                 <Controller
                   name="state"
@@ -1116,7 +1119,7 @@ function StoreForm({
                   </div>
                   <div className="text-xs text-gray-500 text-right">
                     <div>Selected state: {selectedState || "Not selected"}</div>
-                    <div>Country: {selectedCountry || "India"}</div>
+                    <div>Country: {selectedCountry || DEFAULT_COUNTRY}</div>
                   </div>
                 </div>
 
