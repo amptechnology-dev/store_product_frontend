@@ -801,26 +801,61 @@ function Page() {
     </div>
   );
 
+  // typing cholche (debounce baki) ba request cholche -> spinner
+  const isSearching = loading || searchInput.trim() !== search;
+
   const searchBar = (
     <div className="mt-3 px-1">
-      <div className="relative w-full sm:w-96">
-        <i className="pi pi-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm" />
-        <InputText
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          placeholder="Search by product name or code"
-          className="w-full pl-9 pr-8"
-        />
-        {searchInput && (
-          <button
-            type="button"
-            onClick={() => setSearchInput("")}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-            aria-label="Clear search"
-          >
-            <i className="pi pi-times text-xs" />
-          </button>
-        )}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-blue-100 bg-gradient-to-r from-blue-50 via-white to-blue-50 p-3 shadow-sm">
+        {/* Search input */}
+        <div className="product-search relative w-full sm:max-w-md">
+          <i className="pi pi-search absolute left-4 top-1/2 -translate-y-1/2 text-blue-500 text-sm pointer-events-none" />
+          <InputText
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setSearchInput("");
+            }}
+            placeholder="Search by product name or code..."
+            className="product-search-input w-full"
+            aria-label="Search products"
+          />
+          {searchInput ? (
+            <button
+              type="button"
+              onClick={() => setSearchInput("")}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center rounded-full bg-gray-100 text-gray-500 hover:bg-red-100 hover:text-red-600 transition-colors"
+              aria-label="Clear search"
+            >
+              {isSearching ? (
+                <i className="pi pi-spin pi-spinner text-[10px]" />
+              ) : (
+                <i className="pi pi-times text-[10px]" />
+              )}
+            </button>
+          ) : null}
+        </div>
+
+        {/* Result info */}
+        <div className="flex items-center gap-2 text-sm">
+          {search ? (
+            <>
+              <span className="inline-flex items-center gap-1.5 max-w-[220px] rounded-full bg-blue-100 text-blue-800 font-medium px-3 py-1">
+                <i className="pi pi-filter text-[11px]" />
+                <span className="truncate">“{search}”</span>
+              </span>
+              <span className="text-gray-600 whitespace-nowrap">
+                <b className="text-blue-700">{totalProducts}</b> result
+                {totalProducts === 1 ? "" : "s"}
+              </span>
+            </>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-white border border-blue-100 text-gray-600 px-3 py-1">
+              <i className="pi pi-box text-blue-500 text-[11px]" />
+              <b className="text-blue-700">{totalProducts}</b> products
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1084,6 +1119,34 @@ function Page() {
         <ConfirmDialog />
         <ToastContainer position="top-right" />
       </div>
+
+      {/* Search bar styling */}
+      <style jsx global>{`
+        .product-search-input.p-inputtext {
+          width: 100%;
+          padding: 11px 40px 11px 42px;
+          border-radius: 999px;
+          border: 1.5px solid #bfdbfe;
+          background: #fff;
+          font-size: 14px;
+          color: #1f2937;
+          box-shadow: 0 1px 2px rgba(29, 78, 216, 0.06);
+          transition:
+            border-color 0.2s ease,
+            box-shadow 0.2s ease;
+        }
+        .product-search-input.p-inputtext::placeholder {
+          color: #9ca3af;
+        }
+        .product-search-input.p-inputtext:hover {
+          border-color: #93c5fd;
+        }
+        .product-search-input.p-inputtext:enabled:focus {
+          outline: none;
+          border-color: #3b82f6;
+          box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.18);
+        }
+      `}</style>
     </div>
   );
 }

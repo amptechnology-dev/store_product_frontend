@@ -156,6 +156,11 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
                 icon: "pi-building",
                 href: "/dashboard/company",
               },
+              {
+                label: "App Releases",
+                icon: "pi-mobile",
+                href: "/dashboard/app-releases",
+              },
             ]
           : []),
         ...(role === "STORE"
@@ -194,6 +199,11 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
                 label: "Orders",
                 icon: "pi-shopping-cart",
                 href: "/dashboard/orders",
+              },
+              {
+                label: "Visitors",
+                icon: "pi-eye",
+                href: "/dashboard/visitors",
               },
             ]
           : []),
