@@ -15,11 +15,11 @@ import { Button } from "primereact/button";
 
 const EmptyState = () => (
   <div className="flex flex-col items-center justify-center h-full text-center py-10">
-    <div className="text-6xl mb-4">👀</div>
-    <h2 className="text-xl font-semibold text-gray-700">No Visitors Yet</h2>
+    <div className="text-6xl mb-4">🛍️</div>
+    <h2 className="text-xl font-semibold text-gray-700">No Customers Yet</h2>
     <p className="text-gray-500 mt-2 max-w-md">
-      Users who open your store link in the app but haven't placed an order yet
-      will appear here.
+      Users who place an order from your store will appear here with their
+      order details.
     </p>
   </div>
 );
@@ -61,6 +61,14 @@ const stringToBg = (str?: string) => {
     hash = str.charCodeAt(i) + ((hash << 5) - hash);
   }
   return colors[Math.abs(hash) % colors.length];
+};
+
+const orderStatusStyle: Record<string, string> = {
+  PENDING: "bg-yellow-100 text-yellow-800",
+  CONFIRMED: "bg-blue-100 text-blue-800",
+  SHIPPED: "bg-indigo-100 text-indigo-800",
+  DELIVERED: "bg-green-100 text-green-800",
+  CANCELLED: "bg-red-100 text-red-800",
 };
 
 const Avatar = ({
@@ -112,7 +120,7 @@ const DetailItem = ({
 
 function Page() {
   const [loading, setLoading] = useState(false);
-  const [visitors, setVisitors] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
 
   const [pagination, setPagination] = useState({
     page: 1,
@@ -142,9 +150,9 @@ function Page() {
     })();
   }, []);
 
-  /* ================= FETCH VISITORS ================= */
+  /* ================= FETCH CUSTOMERS ================= */
   useEffect(() => {
-    visitorsGet();
+    customersGet();
   }, [pagination.page, pagination.rows, debouncedSearch, selectedStore]);
 
   useEffect(() => {
@@ -156,10 +164,10 @@ function Page() {
     setPagination((prev) => ({ ...prev, page: 1 }));
   }, [debouncedSearch, selectedStore]);
 
-  const visitorsGet = async () => {
+  const customersGet = async () => {
     try {
       setLoading(true);
-      const res = await axiosInstance.get("/api/store-visit/visitors", {
+      const res = await axiosInstance.get("/api/store-visit/customers", {
         params: {
           page: pagination.page,
           limit: pagination.rows,
@@ -168,10 +176,14 @@ function Page() {
         },
       });
 
-      setVisitors(res.data.visitors || []);
+      const list = (res.data.customers || []).map((c: any) => ({
+        ...c,
+        _key: `${c.user?._id}-${c.store?._id}`,
+      }));
+      setCustomers(list);
       setPagination((prev) => ({
         ...prev,
-        total: res.data.totalVisitors || 0,
+        total: res.data.totalCustomers || 0,
       }));
     } catch (error: any) {
       if (axios.isAxiosError(error)) {
@@ -186,18 +198,18 @@ function Page() {
 
   /* ================= DETAILS ================= */
   const openDetails = async (row: any) => {
-    if (row.masked) return;
     setDetail(null);
     setDetailVisible(true);
     try {
       setDetailLoading(true);
       const res = await axiosInstance.get(
-        `/api/store-visit/visitors/${row._id}`,
+        `/api/store-visit/customers/${row.user._id}`,
+        { params: { storeId: row.store._id } },
       );
-      setDetail(res.data.visitor);
+      setDetail(res.data.customer);
     } catch (error: any) {
       toast.error(
-        error?.response?.data?.message || "Failed to load visitor details",
+        error?.response?.data?.message || "Failed to load customer details",
       );
       setDetailVisible(false);
     } finally {
@@ -228,49 +240,26 @@ function Page() {
     </div>
   );
 
-  const statusTemplate = (row: any) => (
-    <span
-      className={`px-2 py-1 rounded-full text-xs font-medium ${
-        row.user?.isActive
-          ? "bg-green-100 text-green-800"
-          : "bg-red-100 text-red-800"
-      }`}
-    >
-      {row.user?.isActive ? "Active" : "Inactive"}
-    </span>
-  );
-
   const actionTemplate = (row: any) => (
     <div onClick={(e) => e.stopPropagation()} className="flex">
-      {row.masked ? (
-        <span
-          className="inline-flex items-center gap-1 text-xs text-gray-500 px-2 py-1 rounded-full bg-gray-100"
-          title="Full details are hidden for this store"
-        >
-          <i className="pi pi-lock text-xs" />
-          Locked
-        </span>
-      ) : (
-        <Button
-          icon="pi pi-eye"
-          rounded
-          text
-          aria-label="View details"
-          tooltip="View details"
-          tooltipOptions={{ position: "left" }}
-          onClick={() => openDetails(row)}
-        />
-      )}
+      <Button
+        icon="pi pi-eye"
+        rounded
+        text
+        aria-label="View details"
+        tooltip="View details"
+        tooltipOptions={{ position: "left" }}
+        onClick={() => openDetails(row)}
+      />
     </div>
   );
 
   const header = (
     <div className="flex flex-wrap gap-3 justify-between items-center bg-blue-600 p-3 rounded-lg">
       <div>
-        <h2 className="text-lg font-semibold text-white m-0">Visitors</h2>
+        <h2 className="text-lg font-semibold text-white m-0">Customers</h2>
         <p className="text-sm text-blue-100 m-0">
-          Users who visited your store through the store link but haven't
-          ordered yet
+          Users who have placed orders from your store
         </p>
       </div>
 
@@ -293,7 +282,7 @@ function Page() {
           <InputText
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Search visitors"
+            placeholder="Search customers"
             className="p-inputtext-sm"
           />
         </IconField>
@@ -307,9 +296,9 @@ function Page() {
         <i className="pi pi-user text-white text-2xl"></i>
       </div>
       <div>
-        <h2 className="text-xl font-bold text-white m-0">Visitor Details</h2>
+        <h2 className="text-xl font-bold text-white m-0">Customer Details</h2>
         <p className="text-sm text-white/90 m-0">
-          Full information about this visitor
+          Full information and order summary
         </p>
       </div>
     </div>
@@ -330,26 +319,17 @@ function Page() {
         .join(", ")
     : "";
 
-  const hasMasked = visitors.some((v) => v.masked);
-
   return (
     <div className="w-full flex justify-center items-center">
       <div className="w-full card bg-white p-4 rounded-lg shadow">
-        {hasMasked && (
-          <div className="flex items-center gap-2 mb-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
-            <i className="pi pi-lock" />
-            Some visitor details are hidden. Contact the admin to enable full
-            visitor access for your store.
-          </div>
-        )}
-
         <DataTable
-          value={visitors}
+          value={customers}
+          dataKey="_key"
           header={header}
           lazy
           paginator
-          className="visitors-table"
-          rowClassName={(row: any) => (row.masked ? "" : "cursor-pointer")}
+          className="customers-table"
+          rowClassName={() => "cursor-pointer"}
           onRowClick={(e) => openDetails(e.data)}
           first={(pagination.page - 1) * pagination.rows}
           rows={pagination.rows}
@@ -366,17 +346,17 @@ function Page() {
           responsiveLayout="scroll"
           emptyMessage={EmptyState}
         >
-          <Column header="Visitor" body={userTemplate} />
+          <Column header="Customer" body={userTemplate} />
           <Column header="Phone" body={(row: any) => row.user?.phone || "-"} />
           <Column header="Store" body={storeTemplate} />
-          <Column header="Status" body={statusTemplate} />
+          <Column field="totalOrders" header="Orders" />
           <Column
-            header="First Visit"
-            body={(row: any) => formatDateTime(row.createdAt)}
+            header="Total Spent"
+            body={(row: any) => `₹${row.totalSpent ?? 0}`}
           />
           <Column
-            header="Last Visit"
-            body={(row: any) => formatDateTime(row.lastVisitedAt)}
+            header="Last Order"
+            body={(row: any) => formatDateTime(row.lastOrderAt)}
           />
           <Column header="Actions" body={actionTemplate} />
         </DataTable>
@@ -426,6 +406,26 @@ function Page() {
                 </div>
               </div>
 
+              {/* Order summary */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-4 rounded-lg bg-blue-50 border border-blue-100 text-center">
+                  <p className="text-2xl font-bold text-blue-700 m-0">
+                    {detail.orderStats?.totalOrders ?? 0}
+                  </p>
+                  <p className="text-xs text-gray-600 m-0">
+                    Orders from this store
+                  </p>
+                </div>
+                <div className="p-4 rounded-lg bg-blue-50 border border-blue-100 text-center">
+                  <p className="text-2xl font-bold text-blue-700 m-0">
+                    ₹{detail.orderStats?.totalSpent ?? 0}
+                  </p>
+                  <p className="text-xs text-gray-600 m-0">
+                    Total spent (excl. cancelled)
+                  </p>
+                </div>
+              </div>
+
               {/* Info grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <DetailItem icon="pi-phone" label="Phone" value={u?.phone} />
@@ -436,7 +436,7 @@ function Page() {
                 />
                 <DetailItem
                   icon="pi-shop"
-                  label="Visited Store"
+                  label="Store"
                   value={`${detail.store?.storeName} (${detail.store?.storeUniqueId})`}
                 />
                 <DetailItem
@@ -462,6 +462,47 @@ function Page() {
                   />
                 </div>
               </div>
+
+              {/* Recent orders */}
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700 mb-2">
+                  Recent Orders
+                </h4>
+                {detail.recentOrders?.length ? (
+                  <div className="flex flex-col gap-2">
+                    {detail.recentOrders.map((o: any) => (
+                      <div
+                        key={o._id}
+                        className="flex items-center justify-between p-3 rounded-lg border border-slate-200"
+                      >
+                        <div>
+                          <p className="text-sm font-semibold text-gray-800 m-0">
+                            Order #{o.orderNumber}
+                          </p>
+                          <p className="text-xs text-gray-500 m-0">
+                            {formatDateTime(o.createdAt)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm font-semibold">
+                            ₹{o.totalAmount}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                              orderStatusStyle[o.status] ||
+                              "bg-gray-100 text-gray-700"
+                            }`}
+                          >
+                            {o.status}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">No orders found.</p>
+                )}
+              </div>
             </div>
           )}
         </Dialog>
@@ -470,13 +511,13 @@ function Page() {
       </div>
 
       <style jsx global>{`
-        .visitors-table .p-datatable-thead > tr > th {
+        .customers-table .p-datatable-thead > tr > th {
           background: #2563eb !important;
           color: #fff !important;
           border-color: #1d4ed8 !important;
           font-weight: 600;
         }
-        .visitors-table .p-datatable-tbody > tr:hover {
+        .customers-table .p-datatable-tbody > tr:hover {
           background: #eff6ff !important;
         }
       `}</style>

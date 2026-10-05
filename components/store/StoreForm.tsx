@@ -13,6 +13,7 @@ import { InputText } from "primereact/inputtext";
 import { InputTextarea } from "primereact/inputtextarea";
 import { Checkbox } from "primereact/checkbox";
 import { useProfileStore } from "@/lib/store/profileStore";
+import { InputSwitch } from "primereact/inputswitch";
 import storeTypeList from "@/lib/storetype.json";
 
 const DEFAULT_COUNTRY = "India";
@@ -365,6 +366,7 @@ function StoreForm({
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [isActive, setIsActive] = useState(true);
   const [isVerify, setIsVerify] = useState(false);
+  const [isVisitor, setIsVisitor] = useState(false);
   const [isMapLoading, setIsMapLoading] = useState(false);
   const [locationQuery, setLocationQuery] = useState("");
   const [locationResults, setLocationResults] = useState<
@@ -686,6 +688,9 @@ function StoreForm({
 
       setIsActive(typeof store.isActive === "boolean" ? store.isActive : true);
       setIsVerify(typeof store.isVerify === "boolean" ? store.isVerify : false);
+      setIsVisitor(
+        typeof store.isVisitor === "boolean" ? store.isVisitor : false,
+      );
     } catch (error: any) {
       toast.error(
         error.response?.data?.message || "Failed to fetch store data",
@@ -770,6 +775,9 @@ function StoreForm({
 
       formData.append("isActive", isActive.toString());
       formData.append("isVerify", isVerify.toString());
+      if (canShowVerifyField) {
+        formData.append("isVisitor", isVisitor.toString());
+      }
 
       let res;
       if (isEditMode) {
@@ -801,6 +809,7 @@ function StoreForm({
       setLocationQuery("");
       setLocationResults([]);
       setSelectedLocationLabel("");
+      setIsVisitor(false);
       onSuccess();
     } catch (error: any) {
       console.error("Store operation error:", error);
@@ -1394,6 +1403,36 @@ function StoreForm({
                 >
                   Active Store
                 </label>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Visitor access (ADMIN only, create + edit) */}
+        {canShowVerifyField && (
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+              <i className="pi pi-eye" style={{ color: "#d89f00" }}></i>
+              Visitor Access
+            </h3>
+
+            <div className="flex items-start gap-3">
+              <InputSwitch
+                inputId="isVisitor"
+                checked={isVisitor}
+                onChange={(e) => setIsVisitor(!!e.value)}
+              />
+              <div>
+                <label
+                  htmlFor="isVisitor"
+                  className="text-sm font-semibold text-gray-700"
+                >
+                  Show full visitor details
+                </label>
+                <p className="text-xs text-gray-500 mt-1">
+                  When off, the store owner sees visitors with masked name,
+                  phone and email. When on, full details are visible.
+                </p>
               </div>
             </div>
           </div>
