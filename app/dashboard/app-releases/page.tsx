@@ -17,15 +17,15 @@ import { Menu } from "primereact/menu";
 import { ProgressBar } from "primereact/progressbar";
 import { formatDate } from "@/helper/DateTime";
 
-const MAX_APK_SIZE = 200 * 1024 * 1024; // backend er sathe mil
+const MAX_APK_SIZE = 200 * 1024 * 1024; // keep in sync with backend limit
 
 const EmptyState = () => (
   <div className="flex flex-col items-center justify-center h-full text-center py-10">
     <div className="text-6xl mb-4">📱</div>
     <h2 className="text-xl font-semibold text-gray-700">No App Release</h2>
     <p className="text-gray-500 mt-2 max-w-md">
-      Apni ekhono kono APK upload koren ni. Upload korle store link theke
-      Android user ra shorashori download korte parbe.
+      You haven&apos;t uploaded any APK yet. Once you upload one, Android users
+      can download it directly from the store link.
     </p>
   </div>
 );
@@ -35,6 +35,31 @@ const formatSize = (b?: number) => {
   return b >= 1024 * 1024
     ? `${(b / 1024 / 1024).toFixed(1)} MB`
     : `${Math.round(b / 1024)} KB`;
+};
+
+// Turn any axios error into a clear message
+const getErrorMessage = (error: any, fallback: string): string => {
+  if (error?.response) {
+    const data = error.response.data;
+    const status = error.response.status;
+    const fieldError = data?.errors?.[0]?.message;
+    if (fieldError) return fieldError;
+    if (data?.message) return data.message;
+    if (status === 413) {
+      return "File is too large for the server (413). Increase the proxy upload limit.";
+    }
+    if (status === 401 || status === 403) {
+      return "You are not authorized to perform this action.";
+    }
+    return `${fallback} (status ${status})`;
+  }
+  if (error?.code === "ECONNABORTED") {
+    return "Request timed out. Please try again.";
+  }
+  if (error?.request) {
+    return "Network error: server unreachable, blocked by CORS, or the upload exceeded the server limit.";
+  }
+  return error?.message || fallback;
 };
 
 const emptyForm = { appName: "", version: "", releaseNotes: "" };
@@ -112,6 +137,7 @@ function Page() {
     setForm(emptyForm);
     setApkFile(null);
     setMakeActive(true);
+    setProgress(0);
     setVisible(true);
   };
 
@@ -124,6 +150,7 @@ function Page() {
     });
     setApkFile(null);
     setMakeActive(!!row.isActive);
+    setProgress(0);
     setVisible(true);
   };
 
@@ -162,30 +189,30 @@ function Page() {
     try {
       setSaving(true);
       setProgress(0);
+
+      // No manual Content-Type: the browser sets multipart + boundary itself
       const res = await axiosInstance.post("/api/app-release/upsert", fd, {
-        headers: { "Content-Type": "multipart/form-data" },
-        timeout: 0, // boro APK upload e timeout na hoy
+        timeout: 0, // no timeout for large APK uploads
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity,
         onUploadProgress: (ev) => {
           if (ev.total) setProgress(Math.round((ev.loaded * 100) / ev.total));
         },
       });
+
       toast.success(res.data.message || "Saved successfully");
       setSaving(false);
       closeDialog();
       await appsGet();
     } catch (error: any) {
-      const errs = error?.response?.data?.errors;
-      toast.error(
-        errs?.[0]?.message ||
-          error?.response?.data?.message ||
-          "Failed to save app release",
-      );
+      console.error("Upsert app release failed:", error);
+      toast.error(getErrorMessage(error, "Failed to save app release"));
     } finally {
       setSaving(false);
     }
   };
 
-  // file chhara shudhu isActive pathiye toggle (same upsert API)
+  // Toggle live status (no file needed, same upsert API)
   const toggleActive = async (row: any) => {
     try {
       const res = await axiosInstance.post("/api/app-release/upsert", {
@@ -195,7 +222,7 @@ function Page() {
       toast.success(res.data.message || "Status updated");
       await appsGet();
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || "Status update failed");
+      toast.error(getErrorMessage(err, "Status update failed"));
     }
   };
 
@@ -213,7 +240,7 @@ function Page() {
           toast.success(res.data.message || "Deleted successfully");
           await appsGet();
         } catch (err: any) {
-          toast.error(err?.response?.data?.message || "Delete failed");
+          toast.error(getErrorMessage(err, "Delete failed"));
         }
       },
     });
@@ -315,7 +342,7 @@ function Page() {
       <div>
         <h2 className="text-lg font-semibold text-white m-0">App Releases</h2>
         <p className="text-sm text-blue-100 m-0">
-          Manage Android APK. Live release-i store link e download hobe
+          Manage Android APK. The live release is served from the store link
         </p>
       </div>
 
@@ -472,7 +499,7 @@ function Page() {
                 }
                 rows={3}
                 autoResize
-                placeholder="Which changes in this version"
+                placeholder="What changed in this version"
                 disabled={saving}
               />
             </div>
@@ -484,7 +511,7 @@ function Page() {
                 onChange={(e) => setMakeActive(e.target.checked)}
                 disabled={saving}
               />
-              Make this release live 
+              Make this release live
             </label>
 
             {saving && (
@@ -492,7 +519,7 @@ function Page() {
                 <ProgressBar value={progress} showValue />
                 <p className="text-xs text-gray-500 mt-1 m-0">
                   {progress < 100
-                    ? "Uploading... page bondho korben na"
+                    ? "Uploading... please do not close this window"
                     : "Processing..."}
                 </p>
               </div>
