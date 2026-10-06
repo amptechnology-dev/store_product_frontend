@@ -568,9 +568,18 @@ function StoreListPage() {
                       style={{ borderColor: "var(--border)" }}
                     >
                       <StoreQRCode
+                        storeId={myStore._id}
                         url={storeUrl}
+                        qrImageUrl={myStore.qrCodeUrl}
                         storeName={myStore.storeName}
                         size={160}
+                        onGenerated={(qrCodeUrl) =>
+                          setStoreData((prev) =>
+                            prev.map((s) =>
+                              s._id === myStore._id ? { ...s, qrCodeUrl } : s,
+                            ),
+                          )
+                        }
                       />
 
                       <div className="flex flex-col gap-2 items-center sm:items-start text-center sm:text-left">
@@ -585,9 +594,8 @@ function StoreListPage() {
                           className="text-[11px]"
                           style={{ color: "var(--muted)" }}
                         >
-                          Customers can scan this QR to open your store
-                          directly in the app. Download and print it for your
-                          shop.
+                          Customers can scan this QR to open your store directly
+                          in the app. Download and print it for your shop.
                         </p>
                         <Button
                           icon="pi pi-camera"

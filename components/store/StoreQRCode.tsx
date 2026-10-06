@@ -1,79 +1,80 @@
 "use client";
 
-import React, { useRef } from "react";
-import { QRCodeCanvas } from "qrcode.react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "primereact/button";
 import { toast } from "react-toastify";
+import axiosInstance from "@/service/axios.service";
 
 interface StoreQRCodeProps {
+  storeId: string;
   url: string;
+  qrImageUrl?: string;
   storeName?: string;
-  size?: number; // display size (px)
+  size?: number;
+  onGenerated?: (qrCodeUrl: string) => void;
 }
 
-const QR_RESOLUTION = 1024;
+const StoreQRCode = ({
+  storeId,
+  url,
+  qrImageUrl,
+  storeName,
+  size = 160,
+  onGenerated,
+}: StoreQRCodeProps) => {
+  const [generating, setGenerating] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const triedRef = useRef(false);
 
-const StoreQRCode = ({ url, storeName, size = 160 }: StoreQRCodeProps) => {
-  const wrapRef = useRef<HTMLDivElement>(null);
-
-  const fileName = `${(storeName || "store").replace(/\s+/g, "-")}-qr.png`;
+  const fileName = `${(storeName || "store").replace(/\s+/g, "-")}-qr.jpg`;
   const shareText = `Scan this QR or open the link to visit ${
     storeName || "our store"
   }: ${url}`;
 
-  const getQrCanvas = () => wrapRef.current?.querySelector("canvas") || null;
+  const generateQr = useCallback(async () => {
+    try {
+      setGenerating(true);
+      setFailed(false);
+      const res = await axiosInstance.post(
+        `/api/register/generate-store-qr/${storeId}`,
+      );
+      if (res.data?.qrCodeUrl) onGenerated?.(res.data.qrCodeUrl);
+    } catch {
+      setFailed(true);
+      toast.error("Failed to generate QR code");
+    } finally {
+      setGenerating(false);
+    }
+  }, [storeId, onGenerated]);
 
-  // QR + store name + caption diye shareable image banabe
-  const buildShareImage = (): Promise<{
+  // QR na thakle (purono store) automatic generate
+  useEffect(() => {
+    if (qrImageUrl || !storeId || triedRef.current) return;
+    triedRef.current = true;
+    generateQr();
+  }, [qrImageUrl, storeId, generateQr]);
+
+  // CDN theke image ta blob + dataUrl hishebe nibe (R2 CORS e GET allow thakte hobe)
+  const fetchQrImage = async (): Promise<{
     blob: Blob;
     dataUrl: string;
-  } | null> =>
-    new Promise((resolve) => {
-      const qrCanvas = getQrCanvas();
-      if (!qrCanvas) return resolve(null);
-
-      const padding = 80;
-      const titleHeight = storeName ? 140 : 0;
-      const footerHeight = 110;
-      const width = QR_RESOLUTION + padding * 2;
-      const height = QR_RESOLUTION + padding * 2 + titleHeight + footerHeight;
-
-      const out = document.createElement("canvas");
-      out.width = width;
-      out.height = height;
-      const ctx = out.getContext("2d");
-      if (!ctx) return resolve(null);
-
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, width, height);
-      ctx.textAlign = "center";
-
-      if (storeName) {
-        ctx.fillStyle = "#111827";
-        ctx.font = "bold 64px Arial, sans-serif";
-        ctx.fillText(storeName, width / 2, padding + 70, width - padding * 2);
-      }
-
-      ctx.drawImage(
-        qrCanvas,
-        padding,
-        padding + titleHeight,
-        QR_RESOLUTION,
-        QR_RESOLUTION,
-      );
-
-      ctx.fillStyle = "#6b7280";
-      ctx.font = "40px Arial, sans-serif";
-      ctx.fillText(
-        "Scan to open our store in the app",
-        width / 2,
-        height - padding,
-        width - padding * 2,
-      );
-
-      const dataUrl = out.toDataURL("image/png");
-      out.toBlob((blob) => resolve(blob ? { blob, dataUrl } : null), "image/png");
-    });
+  } | null> => {
+    if (!qrImageUrl) return null;
+    try {
+      const res = await fetch(qrImageUrl);
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      return { blob, dataUrl };
+    } catch {
+      return null;
+    }
+  };
 
   const downloadBlob = (blob: Blob) => {
     const objectUrl = URL.createObjectURL(blob);
@@ -86,7 +87,6 @@ const StoreQRCode = ({ url, storeName, size = 160 }: StoreQRCodeProps) => {
     setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
   };
 
-  // Modern Clipboard API (HTTPS / localhost only)
   const copyImageModern = async (blob: Blob) => {
     try {
       if (
@@ -96,8 +96,9 @@ const StoreQRCode = ({ url, storeName, size = 160 }: StoreQRCodeProps) => {
       ) {
         return false;
       }
+      // ClipboardItem shudhu image/png support kore, JPG hole eta fail hoye legacy te jabe
       await navigator.clipboard.write([
-        new ClipboardItem({ "image/png": blob }),
+        new ClipboardItem({ [blob.type]: blob }),
       ]);
       return true;
     } catch {
@@ -105,8 +106,6 @@ const StoreQRCode = ({ url, storeName, size = 160 }: StoreQRCodeProps) => {
     }
   };
 
-  // Legacy trick: HTTP te o kaj kore (Chrome / Edge).
-  // <img> ke contenteditable div e boshiye select kore execCommand("copy")
   const copyImageLegacy = (dataUrl: string) =>
     new Promise<boolean>((resolve) => {
       const img = new Image();
@@ -144,22 +143,25 @@ const StoreQRCode = ({ url, storeName, size = 160 }: StoreQRCodeProps) => {
     });
 
   const handleDownload = async () => {
-    const result = await buildShareImage();
-    if (!result) return;
+    const result = await fetchQrImage();
+    if (!result) {
+      // CORS issue hole at least image ta new tab e khulbe
+      if (qrImageUrl) window.open(qrImageUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
     downloadBlob(result.blob);
   };
 
   const handleShareOnWhatsApp = async () => {
-    const result = await buildShareImage();
+    const result = await fetchQrImage();
     if (!result) {
-      toast.error("Failed to generate QR image");
+      toast.error("Failed to load QR image");
       return;
     }
     const { blob, dataUrl } = result;
 
-    const file = new File([blob], fileName, { type: "image/png" });
+    const file = new File([blob], fileName, { type: "image/jpeg" });
 
-    // 1) Mobile + HTTPS: native share sheet -> WhatsApp select korle image + link jabe
     if (
       typeof navigator.share === "function" &&
       typeof navigator.canShare === "function" &&
@@ -173,11 +175,10 @@ const StoreQRCode = ({ url, storeName, size = 160 }: StoreQRCodeProps) => {
         });
         return;
       } catch (err: any) {
-        if (err?.name === "AbortError") return; // user cancel korse
+        if (err?.name === "AbortError") return;
       }
     }
 
-    // 2) Fallback: image clipboard e copy (modern -> legacy) + download + WhatsApp open
     let copied = await copyImageModern(blob);
     if (!copied) copied = await copyImageLegacy(dataUrl);
 
@@ -202,17 +203,29 @@ const StoreQRCode = ({ url, storeName, size = 160 }: StoreQRCodeProps) => {
   return (
     <div className="flex flex-col items-center gap-2">
       <div
-        ref={wrapRef}
-        className="bg-white p-2 rounded-xl border"
-        style={{ borderColor: "var(--border)" }}
+        className="bg-white p-2 rounded-xl border flex items-center justify-center"
+        style={{ borderColor: "var(--border)", width: size + 16, minHeight: size + 16 }}
       >
-        <QRCodeCanvas
-          value={url}
-          size={QR_RESOLUTION}
-          level="H"
-          marginSize={2}
-          style={{ width: size, height: size }}
-        />
+        {qrImageUrl ? (
+          <img
+            src={qrImageUrl}
+            alt={`${storeName || "Store"} QR code`}
+            style={{ width: size, height: "auto" }}
+          />
+        ) : generating ? (
+          <i
+            className="pi pi-spin pi-spinner text-2xl"
+            style={{ color: "var(--brand-blue)" }}
+          ></i>
+        ) : (
+          <Button
+            icon="pi pi-refresh"
+            label={failed ? "Retry" : "Generate"}
+            onClick={generateQr}
+            className="text-xs"
+            text
+          />
+        )}
       </div>
 
       <div className="flex gap-2">
@@ -220,6 +233,7 @@ const StoreQRCode = ({ url, storeName, size = 160 }: StoreQRCodeProps) => {
           icon="pi pi-download"
           label="Download"
           onClick={handleDownload}
+          disabled={!qrImageUrl}
           className="text-xs"
           style={{
             background: "var(--brand-primary)",
@@ -232,6 +246,7 @@ const StoreQRCode = ({ url, storeName, size = 160 }: StoreQRCodeProps) => {
           icon="pi pi-whatsapp"
           label="Share"
           onClick={handleShareOnWhatsApp}
+          disabled={!qrImageUrl}
           className="text-xs"
           style={{
             background: "#25D366",
