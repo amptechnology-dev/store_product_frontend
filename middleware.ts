@@ -10,6 +10,9 @@ const ROLE_HOME: Record<string, string> = {
 // shudhu ADMIN dekhte parbe
 const ADMIN_ONLY = ["/dashboard/users"];
 
+// login lagbe na, logged in thakle dashboard e pathiye dibe
+const PUBLIC_PATHS = ["/login", "/forgot-password"];
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const token = request.cookies.get("login-token")?.value;
@@ -29,7 +32,7 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  if (pathname === "/login") {
+  if (PUBLIC_PATHS.includes(pathname)) {
     if (role && ROLE_HOME[role]) {
       return NextResponse.redirect(new URL(ROLE_HOME[role], request.url));
     }
@@ -54,5 +57,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/store", "/login", "/dashboard/:path*"],
+  matcher: ["/", "/store", "/login", "/forgot-password", "/dashboard/:path*"],
 };

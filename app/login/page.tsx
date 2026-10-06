@@ -137,7 +137,14 @@ export default function LoginPage() {
 
     // Characters
     const slot = CAPTCHA_W / (text.length + 1);
-    const palette = ["#1a3a6b", "#2196d3", "#e8590c", "#0b7285", "#862e9c", "#2b8a3e"];
+    const palette = [
+      "#1a3a6b",
+      "#2196d3",
+      "#e8590c",
+      "#0b7285",
+      "#862e9c",
+      "#2b8a3e",
+    ];
     ctx.textBaseline = "middle";
     ctx.textAlign = "center";
 
@@ -167,7 +174,10 @@ export default function LoginPage() {
       const startY = randFloat(10, CAPTCHA_H - 10);
       ctx.moveTo(0, startY);
       for (let x = 0; x <= CAPTCHA_W; x += 10) {
-        ctx.lineTo(x, startY + Math.sin(x / randFloat(8, 16) + i) * randFloat(3, 7));
+        ctx.lineTo(
+          x,
+          startY + Math.sin(x / randFloat(8, 16) + i) * randFloat(3, 7),
+        );
       }
       ctx.stroke();
     }
@@ -351,10 +361,7 @@ export default function LoginPage() {
                   Estore Management System
                 </span>
               </p>
-              <p
-                className="text-xs mt-0.5"
-                style={{ color: "var(--muted)" }}
-              >
+              <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>
                 Welcome back 👋 Sign in to continue
               </p>
               <div
@@ -477,6 +484,17 @@ export default function LoginPage() {
                     ⚠️ {errors.password.message}
                   </small>
                 )}
+              </div>
+
+              <div className="text-right -mt-1">
+                <button
+                  type="button"
+                  onClick={() => router.push("/forget-password")}
+                  className="text-xs font-semibold"
+                  style={{ color: "var(--brand-blue)" }}
+                >
+                  Forgot password?
+                </button>
               </div>
 
               {/* CAPTCHA */}
