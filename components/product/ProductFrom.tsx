@@ -127,6 +127,57 @@ const genUiKey = () =>
     ? crypto.randomUUID()
     : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 
+// ---------- [TIER] quantity based price helpers ----------
+// minQty ekhon user likhe na: 1st tier = 1, porer tier = ager tier er maxQty + 1.
+// Eta diye form e edit korle min/max mismatch hoy na.
+const cleanTiers = (tiers: any) => {
+  if (!Array.isArray(tiers)) return [];
+  const out: { minQty: number | null; maxQty: number | null; price: any }[] =
+    [];
+  tiers.forEach((t: any, i: number) => {
+    const prev = out[i - 1];
+    const minQty =
+      i === 0 ? 1 : prev && prev.maxQty !== null ? prev.maxQty + 1 : null;
+    out.push({
+      minQty,
+      maxQty: isNil(t?.maxQty) ? null : Number(t.maxQty),
+      price: isNil(t?.price) ? null : Number(t.price),
+    });
+  });
+  return out;
+};
+
+const validateTiers = (
+  label: string,
+  rawTiers: any,
+  mrp: any,
+): string | null => {
+  if (!Array.isArray(rawTiers) || rawTiers.length === 0) return null;
+  const tiers = cleanTiers(rawTiers);
+
+  for (let i = 0; i < tiers.length; i++) {
+    const t = tiers[i];
+    const n = `${label}Tier ${i + 1}: `;
+    const isLast = i === tiers.length - 1;
+
+    if (isNil(t.price)) return `${n}price is required`;
+    if (Number(t.price) < 0) return `${n}price cannot be negative`;
+    if (!isNil(mrp) && Number(t.price) > Number(mrp))
+      return `${n}price cannot be greater than MRP`;
+
+    if (!isLast) {
+      if (isNil(t.maxQty))
+        return `${n}max quantity is required (only the last tier can be empty = no limit)`;
+      if (!Number.isInteger(t.maxQty) || Number(t.maxQty) < Number(t.minQty))
+        return `${n}max quantity must be a whole number >= ${t.minQty}`;
+    } else if (!isNil(t.maxQty)) {
+      if (!Number.isInteger(t.maxQty) || Number(t.maxQty) < Number(t.minQty))
+        return `${n}max quantity must be a whole number >= ${t.minQty}`;
+    }
+  }
+  return null;
+};
+
 type PackagingDetails = {
   expectedDeliveryDays?: number;
   length?: number;
@@ -154,6 +205,7 @@ const buildEmptySizeVariant = (d: Defaults = {}) => ({
   lowStockThreshold: d.lowStockThreshold ?? 0,
   sku: d.sku ?? "",
   packagingDetails: {} as PackagingDetails,
+  priceTiers: [] as any[],
 });
 
 const buildEmptyColorVariant = (withSize = false, d: Defaults = {}) => ({
@@ -165,6 +217,7 @@ const buildEmptyColorVariant = (withSize = false, d: Defaults = {}) => ({
   lowStockThreshold: d.lowStockThreshold ?? 0,
   sku: d.sku ?? "",
   packagingDetails: {} as PackagingDetails,
+  priceTiers: [] as any[],
   sizeVariants: (withSize ? [buildEmptySizeVariant(d)] : []) as ReturnType<
     typeof buildEmptySizeVariant
   >[],
@@ -308,6 +361,154 @@ function PackagingFieldsBlock({
               />
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ===============================================================
+// [TIER] Quantity based price tiers (1-4 => ₹20, 5-10 => ₹40, 50+ => ₹200)
+// Min Qty auto-calculated (read-only): 1st = 1, next = previous Max Qty + 1
+// ===============================================================
+function PriceTiersBlock({
+  control,
+  name,
+}: {
+  control: Control<any>;
+  name: string; // e.g. "priceTiers" ba "variants.0.priceTiers"
+}) {
+  const { fields, append, remove, replace } = useFieldArray({
+    control,
+    name: name as any,
+  });
+  const rows = (useWatch({ control, name: name as any }) || []) as any[];
+  const enabled = fields.length > 0;
+
+  // row i er min qty (auto)
+  const minOf = (i: number): number | null => {
+    if (i === 0) return 1;
+    const prevMax = rows[i - 1]?.maxQty;
+    return isNil(prevMax) ? null : Number(prevMax) + 1;
+  };
+
+  const addRow = () => {
+    const last = rows[rows.length - 1];
+    if (last && isNil(last.maxQty)) {
+      toast.error(
+        `Set "Max Qty" of Tier ${rows.length} first, then add the next tier.`,
+      );
+      return;
+    }
+    append({
+      minQty: last ? Number(last.maxQty) + 1 : 1,
+      maxQty: null,
+      price: null,
+    } as any);
+  };
+
+  return (
+    <div className="mt-1.5 border border-dashed border-purple-200 rounded-lg bg-white p-2">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs font-semibold text-purple-700 flex items-center gap-1.5">
+            <i className="pi pi-sort-amount-up"></i>
+            Quantity based pricing
+          </p>
+        </div>
+        <InputSwitch
+          checked={enabled}
+          onChange={(e) =>
+            e.value
+              ? replace([{ minQty: 1, maxQty: null, price: null }] as any)
+              : replace([])
+          }
+        />
+      </div>
+
+      {enabled && (
+        <div className="mt-2 space-y-1.5">
+          {fields.map((f, i) => {
+            const isLast = i === fields.length - 1;
+            const min = minOf(i);
+            return (
+              <div
+                key={f.id}
+                className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-end"
+              >
+                <div className="space-y-1 min-w-0">
+                  <label className="text-[10px] font-medium text-gray-500">
+                    Min Qty (auto)
+                  </label>
+                  <InputNumber
+                    value={min}
+                    className="w-full"
+                    inputClassName="w-full p-inputtext-sm"
+                    useGrouping={false}
+                    disabled
+                    placeholder="—"
+                  />
+                </div>
+                <div className="space-y-1 min-w-0">
+                  <label className="text-[10px] font-medium text-gray-500">
+                    Max Qty
+                  </label>
+                  <Controller
+                    name={`${name}.${i}.maxQty` as any}
+                    control={control}
+                    render={({ field }) => (
+                      <InputNumber
+                        value={field.value ?? null}
+                        onValueChange={(e) => field.onChange(e.value)}
+                        className="w-full"
+                        inputClassName="w-full p-inputtext-sm"
+                        min={min ?? 1}
+                        useGrouping={false}
+                        placeholder={isLast ? "No limit" : "Required"}
+                      />
+                    )}
+                  />
+                </div>
+                <div className="space-y-1 min-w-0">
+                  <label className="text-[10px] font-medium text-gray-500">
+                    Price / unit
+                  </label>
+                  <Controller
+                    name={`${name}.${i}.price` as any}
+                    control={control}
+                    render={({ field }) => (
+                      <InputNumber
+                        value={field.value ?? null}
+                        onValueChange={(e) => field.onChange(e.value)}
+                        className="w-full"
+                        inputClassName="w-full p-inputtext-sm"
+                        min={0}
+                        mode="decimal"
+                        minFractionDigits={2}
+                        maxFractionDigits={2}
+                        useGrouping={false}
+                      />
+                    )}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => remove(i)}
+                  className="text-red-500 hover:text-red-700 pb-2"
+                >
+                  <i className="pi pi-trash"></i>
+                </button>
+              </div>
+            );
+          })}
+          <Button
+            type="button"
+            label="Add Tier"
+            icon="pi pi-plus"
+            size="small"
+            outlined
+            onClick={addRow}
+          />
         </div>
       )}
     </div>
@@ -486,6 +687,7 @@ function SizeVariantRow({
           />
         </div>
       </div>
+      <PriceTiersBlock control={control} name={`${basePath}.priceTiers`} />
       <PackagingFieldsBlock
         control={control}
         basePath={`${basePath}.packagingDetails`}
@@ -756,6 +958,10 @@ function ColorVariantBlock({
               />
             </div>
           </div>
+          <PriceTiersBlock
+            control={control}
+            name={`variants.${colorIndex}.priceTiers`}
+          />
           <PackagingFieldsBlock
             control={control}
             basePath={`variants.${colorIndex}.packagingDetails`}
@@ -814,6 +1020,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
       openingStock: 0,
       lowStockThreshold: 0,
       packagingDetails: {},
+      priceTiers: [],
       variants: [],
     },
   });
@@ -1243,6 +1450,8 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
         setValue("offerPrice", product.offerPrice ?? undefined);
         setValue("openingStock", product.openingStock ?? 0);
         setValue("lowStockThreshold" as any, product.lowStockThreshold ?? 0);
+        // [TIER] simple product er tiers
+        setValue("priceTiers" as any, (product.priceTiers || []) as any);
         setCurrentStockInfo(product.currentStock ?? null);
         replaceVariants([]);
       } else {
@@ -1252,11 +1461,10 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
         setValue("mrp", firstRow?.mrp ?? undefined);
         setValue("offerPrice", firstRow?.offerPrice ?? undefined);
         setValue("openingStock", firstRow?.openingStock ?? 0);
-        setValue(
-          "lowStockThreshold" as any,
-          firstRow?.lowStockThreshold ?? 0,
-        );
+        setValue("lowStockThreshold" as any, firstRow?.lowStockThreshold ?? 0);
         setValue("sku" as any, (firstRow?.sku || "") as any);
+        // [TIER] variant product e top-level tier lagbe na
+        setValue("priceTiers" as any, [] as any);
 
         if (productHasColor) {
           const uiKeys = rawVariants.map(() => genUiKey());
@@ -1271,6 +1479,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
               lowStockThreshold: v.lowStockThreshold ?? 0,
               sku: v.sku || "",
               packagingDetails: v.packagingDetails || {},
+              priceTiers: v.priceTiers || [],
               sizeVariants: isSized(v)
                 ? v.sizeVariants.map((sv: any) => ({
                     size: sv.size || "",
@@ -1282,6 +1491,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
                     lowStockThreshold: sv.lowStockThreshold ?? 0,
                     sku: sv.sku || "",
                     packagingDetails: sv.packagingDetails || {},
+                    priceTiers: sv.priceTiers || [],
                   }))
                 : [],
             })) as any,
@@ -1310,6 +1520,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
               lowStockThreshold: v.lowStockThreshold ?? 0,
               sku: v.sku || "",
               packagingDetails: v.packagingDetails || {},
+              priceTiers: v.priceTiers || [],
             })),
           );
         }
@@ -1376,7 +1587,10 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
   const validateSizeRow = (label: string, sv: any): string | null => {
     if (!hasAttribute(sv))
       return `${label}enter at least one of Size, Weight or Height`;
-    return priceError(label, sv.mrp, sv.offerPrice);
+    return (
+      priceError(label, sv.mrp, sv.offerPrice) ||
+      validateTiers(label, sv.priceTiers, sv.mrp)
+    );
   };
 
   const validateForm = (): string | null => {
@@ -1403,7 +1617,10 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
 
     // ---- Simple product ----
     if (!hasVariants) {
-      return priceError("", values.mrp, values.offerPrice);
+      return (
+        priceError("", values.mrp, values.offerPrice) ||
+        validateTiers("", (values as any).priceTiers, values.mrp)
+      );
     }
 
     if (!variants.length) return "At least one variant is required";
@@ -1434,7 +1651,9 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
             if (err) return err;
           }
         } else {
-          const err = priceError(label, v.mrp, v.offerPrice);
+          const err =
+            priceError(label, v.mrp, v.offerPrice) ||
+            validateTiers(label, v.priceTiers, v.mrp);
           if (err) return err;
         }
       }
@@ -1512,9 +1731,17 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
           String(stockEnabled ? (values.openingStock ?? 0) : 0),
         );
         formData.append("packagingDetails", JSON.stringify(globalPackaging));
+        // [TIER] simple product er price tiers
+        formData.append(
+          "priceTiers",
+          JSON.stringify(cleanTiers((values as any).priceTiers)),
+        );
         formData.append("variants", JSON.stringify([]));
       } else {
         const variants = (values.variants || []) as any[];
+
+        // [TIER] variant product e top-level tier lagbe na, purono tier clear korar jonno khali pathai
+        formData.append("priceTiers", JSON.stringify([]));
 
         const variantsPayload = variants.map((v, idx) => {
           const uiKey = getUiKey(variantFields[idx]);
@@ -1545,6 +1772,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
                   offerPrice: isNil(sv.offerPrice) ? undefined : sv.offerPrice,
                   ...stockOf(sv), // [STOCK]
                   sku: sv.sku || undefined,
+                  priceTiers: cleanTiers(sv.priceTiers), // [TIER]
                   packagingDetails: packagingOf(
                     sv.packagingDetails,
                     globalPackaging,
@@ -1561,6 +1789,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
               offerPrice: isNil(v.offerPrice) ? undefined : v.offerPrice,
               ...stockOf(v), // [STOCK]
               sku: v.sku || undefined,
+              priceTiers: cleanTiers(v.priceTiers), // [TIER]
               packagingDetails: packagingOf(
                 v.packagingDetails,
                 globalPackaging,
@@ -1577,6 +1806,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
             offerPrice: isNil(v.offerPrice) ? undefined : v.offerPrice,
             ...stockOf(v), // [STOCK]
             sku: v.sku || undefined,
+            priceTiers: cleanTiers(v.priceTiers), // [TIER]
             packagingDetails: packagingOf(v.packagingDetails, globalPackaging),
           };
         });
@@ -1991,6 +2221,12 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
               />
             </div>
           </div>
+
+          {/* [TIER] shudhu simple product er jonno (variant e proti row te alada) */}
+          {!hasVariants && (
+            <PriceTiersBlock control={control} name="priceTiers" />
+          )}
+
           <PackagingFieldsBlock control={control} basePath="packagingDetails" />
         </div>
 

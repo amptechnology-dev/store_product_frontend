@@ -19,6 +19,9 @@ const LIST_ENDPOINT = "/api/product/all-products";
 const DELETE_ENDPOINT = "/api/product/delete-product";
 
 // ---------- Types ----------
+// [TIER] quantity based price
+type PriceTier = { minQty: number; maxQty?: number | null; price: number };
+
 type SizeVariant = {
   size?: string | null;
   weight?: string | null;
@@ -27,6 +30,7 @@ type SizeVariant = {
   offerPrice?: number | null;
   currentStock?: number | null;
   lowStockThreshold?: number | null;
+  priceTiers?: PriceTier[];
 };
 
 type Variant = SizeVariant & {
@@ -49,6 +53,7 @@ type ProductRow = {
   maxOfferPrice?: number | null;
   currentStock?: number | null;
   lowStockThreshold?: number | null;
+  priceTiers?: PriceTier[];
   variants?: Variant[];
   hasVariants?: boolean;
   hasColor?: boolean;
@@ -68,6 +73,7 @@ type Unit = {
   offerPrice?: number | null;
   currentStock: number;
   lowStockThreshold: number;
+  tiers?: PriceTier[];
 };
 
 // ---------- Helpers ----------
@@ -111,6 +117,7 @@ const flattenUnits = (p: ProductRow): Unit[] => {
           offerPrice: sv.offerPrice,
           currentStock: sv.currentStock ?? 0,
           lowStockThreshold: sv.lowStockThreshold ?? 0,
+          tiers: sv.priceTiers,
         }),
       );
     } else {
@@ -120,6 +127,7 @@ const flattenUnits = (p: ProductRow): Unit[] => {
         offerPrice: v.offerPrice,
         currentStock: v.currentStock ?? 0,
         lowStockThreshold: v.lowStockThreshold ?? 0,
+        tiers: v.priceTiers,
       });
     }
   });
@@ -166,6 +174,34 @@ const getDiscount = (p: ProductRow): number | null => {
   if (p.offerPrice >= p.mrp) return null;
   return Math.round(((p.mrp - p.offerPrice) / p.mrp) * 100);
 };
+
+// [TIER] kono level e (simple / color / size) tier ache kina
+const hasTiers = (p: ProductRow) =>
+  (p.priceTiers?.length ?? 0) > 0 ||
+  (p.variants || []).some(
+    (v) =>
+      (v.priceTiers?.length ?? 0) > 0 ||
+      (v.sizeVariants || []).some((s) => (s.priceTiers?.length ?? 0) > 0),
+  );
+
+const tierRangeLabel = (t: PriceTier) =>
+  t.maxQty ? `${t.minQty}-${t.maxQty}` : `${t.minQty}+`;
+
+function TierChips({ tiers }: { tiers?: PriceTier[] }) {
+  if (!tiers || tiers.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {tiers.map((t, i) => (
+        <span
+          key={i}
+          className="px-2 py-0.5 rounded-full text-[11px] bg-purple-50 text-purple-700 border border-purple-200 whitespace-nowrap"
+        >
+          {tierRangeLabel(t)} qty: <b>{money(t.price)}</b>
+        </span>
+      ))}
+    </div>
+  );
+}
 
 // ---------- Media preview (image / gif / video) ----------
 function MediaPreview({
@@ -471,6 +507,16 @@ function PreviewBody({
         ))}
       </div>
 
+      {/* [TIER] simple product er quantity pricing */}
+      {(product.priceTiers?.length ?? 0) > 0 && (
+        <div>
+          <h4 className="text-sm font-semibold text-gray-800 mb-2">
+            Quantity pricing
+          </h4>
+          <TierChips tiers={product.priceTiers} />
+        </div>
+      )}
+
       {/* Variants */}
       {units.length > 0 && (
         <div>
@@ -491,29 +537,44 @@ function PreviewBody({
               </thead>
               <tbody>
                 {units.map((u, i) => (
-                  <tr key={i} className="border-t border-blue-50">
-                    <td className="px-3 py-2">{u.label}</td>
-                    <td className="px-3 py-2 text-gray-500">{money(u.mrp)}</td>
-                    <td className="px-3 py-2 font-semibold">
-                      {money(u.offerPrice ?? u.mrp)}
-                    </td>
-                    {product.hasStockManagement && (
-                      <td className="px-3 py-2">
-                        <span
-                          className={
-                            u.currentStock === 0
-                              ? "text-red-600 font-semibold"
-                              : u.lowStockThreshold > 0 &&
-                                  u.currentStock <= u.lowStockThreshold
-                                ? "text-amber-600 font-semibold"
-                                : ""
-                          }
-                        >
-                          {u.currentStock}
-                        </span>
+                  <React.Fragment key={i}>
+                    <tr className="border-t border-blue-50">
+                      <td className="px-3 py-2">{u.label}</td>
+                      <td className="px-3 py-2 text-gray-500">
+                        {money(u.mrp)}
                       </td>
+                      <td className="px-3 py-2 font-semibold">
+                        {money(u.offerPrice ?? u.mrp)}
+                      </td>
+                      {product.hasStockManagement && (
+                        <td className="px-3 py-2">
+                          <span
+                            className={
+                              u.currentStock === 0
+                                ? "text-red-600 font-semibold"
+                                : u.lowStockThreshold > 0 &&
+                                    u.currentStock <= u.lowStockThreshold
+                                  ? "text-amber-600 font-semibold"
+                                  : ""
+                            }
+                          >
+                            {u.currentStock}
+                          </span>
+                        </td>
+                      )}
+                    </tr>
+                    {/* [TIER] variant er quantity pricing */}
+                    {u.tiers && u.tiers.length > 0 && (
+                      <tr>
+                        <td
+                          colSpan={product.hasStockManagement ? 4 : 3}
+                          className="px-3 pb-2"
+                        >
+                          <TierChips tiers={u.tiers} />
+                        </td>
+                      </tr>
                     )}
-                  </tr>
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>
@@ -685,8 +746,13 @@ function Page() {
 
   const variantsCell = (row: ProductRow) => {
     const { colors, sizes } = getVariantCounts(row);
+    // [TIER] bulk pricing badge
+    const bulk = hasTiers(row) ? (
+      <Badge className="bg-purple-100 text-purple-800">Bulk</Badge>
+    ) : null;
+
     if (!colors && !sizes)
-      return <span className="text-xs text-gray-400">Simple</span>;
+      return bulk || <span className="text-xs text-gray-400">Simple</span>;
     return (
       <div className="flex flex-wrap gap-1">
         {colors > 0 && (
@@ -699,6 +765,7 @@ function Page() {
             {sizes} option{sizes > 1 ? "s" : ""}
           </Badge>
         )}
+        {bulk}
       </div>
     );
   };
@@ -965,6 +1032,12 @@ function Page() {
                         {sizes > 0 && (
                           <Badge className="bg-indigo-100 text-indigo-800">
                             {sizes} option{sizes > 1 ? "s" : ""}
+                          </Badge>
+                        )}
+                        {/* [TIER] */}
+                        {hasTiers(p) && (
+                          <Badge className="bg-purple-100 text-purple-800">
+                            Bulk pricing
                           </Badge>
                         )}
                         {p.hasStockManagement && <StockBadge p={p} />}

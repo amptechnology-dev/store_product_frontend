@@ -56,6 +56,17 @@ export const packagingDetailsSchema = zod
   .optional();
 
 // ===============================
+// QUANTITY BASED PRICE TIER (1-4 => 20, 5-10 => 40, 50+ => 200)
+// coerce use kori ni, karon coerce(null) = 0 hoye jay.
+// asol validation ProductFrom er validateTiers e hoy.
+// ===============================
+export const priceTierSchema = zod.object({
+  minQty: zod.number().nullable().optional(),
+  maxQty: zod.number().nullable().optional(),
+  price: zod.number().nullable().optional(),
+});
+
+// ===============================
 // SIZE/WEIGHT/HEIGHT VARIANT (color-er nested hisebe, ba direct flat variant hisebe)
 // ===============================
 export const sizeVariantSchema = zod.object({
@@ -67,9 +78,10 @@ export const sizeVariantSchema = zod.object({
   offerPrice: zod.coerce.number().nonnegative().optional(),
   openingStock: zod.coerce.number().nonnegative().optional().default(0),
   currentStock: zod.coerce.number().nonnegative().optional(),
-  lowStockThreshold: zod.coerce.number().nonnegative().optional().default(0), // <-- ADDED
+  lowStockThreshold: zod.coerce.number().nonnegative().optional().default(0),
   sku: zod.string().trim().optional(),
   packagingDetails: packagingDetailsSchema,
+  priceTiers: zod.array(priceTierSchema).optional(),
 });
 
 // ===============================
@@ -83,9 +95,10 @@ export const colorVariantSchema = zod.object({
   offerPrice: zod.coerce.number().nonnegative().optional(),
   openingStock: zod.coerce.number().nonnegative().optional().default(0),
   currentStock: zod.coerce.number().nonnegative().optional(),
-  lowStockThreshold: zod.coerce.number().nonnegative().optional().default(0), // <-- ADDED
+  lowStockThreshold: zod.coerce.number().nonnegative().optional().default(0),
   sku: zod.string().trim().optional(),
   packagingDetails: packagingDetailsSchema,
+  priceTiers: zod.array(priceTierSchema).optional(),
   sizeVariants: zod.array(sizeVariantSchema).optional(),
 });
 
@@ -100,8 +113,9 @@ export const createProductSchema = zod.object({
   mrp: zod.coerce.number().min(0).optional(),
   offerPrice: zod.coerce.number().min(0).optional(),
   openingStock: zod.coerce.number().min(0).optional(),
-  lowStockThreshold: zod.coerce.number().min(0).optional(), // <-- ADDED
+  lowStockThreshold: zod.coerce.number().min(0).optional(),
   packagingDetails: packagingDetailsSchema,
+  priceTiers: zod.array(priceTierSchema).optional(),
 
   // Loose union - real per-row validation component-e manually hoy
   variants: zod
