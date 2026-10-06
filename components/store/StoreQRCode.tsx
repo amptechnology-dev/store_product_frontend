@@ -54,14 +54,18 @@ const StoreQRCode = ({
     generateQr();
   }, [qrImageUrl, storeId, generateQr]);
 
-  // CDN theke image ta blob + dataUrl hishebe nibe (R2 CORS e GET allow thakte hobe)
+  // CDN theke image ta blob + dataUrl hishebe nibe
+  // cache: "no-store" -> browser er purono CORS-less cached response bypass kore
   const fetchQrImage = async (): Promise<{
     blob: Blob;
     dataUrl: string;
   } | null> => {
     if (!qrImageUrl) return null;
     try {
-      const res = await fetch(qrImageUrl);
+      const res = await fetch(qrImageUrl, {
+        mode: "cors",
+        cache: "no-store",
+      });
       if (!res.ok) return null;
       const blob = await res.blob();
       const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -75,6 +79,38 @@ const StoreQRCode = ({
       return null;
     }
   };
+
+  // JPG -> PNG (ClipboardItem shudhu image/png support kore)
+  const toPngBlob = (blob: Blob): Promise<Blob | null> =>
+    new Promise((resolve) => {
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(blob);
+
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          URL.revokeObjectURL(objectUrl);
+          return resolve(null);
+        }
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0);
+        canvas.toBlob((png) => {
+          URL.revokeObjectURL(objectUrl);
+          resolve(png);
+        }, "image/png");
+      };
+
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        resolve(null);
+      };
+
+      img.src = objectUrl;
+    });
 
   const downloadBlob = (blob: Blob) => {
     const objectUrl = URL.createObjectURL(blob);
@@ -96,9 +132,10 @@ const StoreQRCode = ({
       ) {
         return false;
       }
-      // ClipboardItem shudhu image/png support kore, JPG hole eta fail hoye legacy te jabe
+      const pngBlob = blob.type === "image/png" ? blob : await toPngBlob(blob);
+      if (!pngBlob) return false;
       await navigator.clipboard.write([
-        new ClipboardItem({ [blob.type]: blob }),
+        new ClipboardItem({ "image/png": pngBlob }),
       ]);
       return true;
     } catch {
@@ -145,7 +182,7 @@ const StoreQRCode = ({
   const handleDownload = async () => {
     const result = await fetchQrImage();
     if (!result) {
-      // CORS issue hole at least image ta new tab e khulbe
+      // fetch fail hole at least image ta new tab e khulbe
       if (qrImageUrl) window.open(qrImageUrl, "_blank", "noopener,noreferrer");
       return;
     }
@@ -160,8 +197,11 @@ const StoreQRCode = ({
     }
     const { blob, dataUrl } = result;
 
-    const file = new File([blob], fileName, { type: "image/jpeg" });
+    const file = new File([blob], fileName, {
+      type: blob.type || "image/jpeg",
+    });
 
+    // 1) Mobile / supported browser: direct share (image + text ek sathe)
     if (
       typeof navigator.share === "function" &&
       typeof navigator.canShare === "function" &&
@@ -175,21 +215,26 @@ const StoreQRCode = ({
         });
         return;
       } catch (err: any) {
-        if (err?.name === "AbortError") return;
+        if (err?.name === "AbortError") return; // user cancel korse
+        // onno error hole niche fallback e jabe
       }
     }
 
+    // 2) Desktop fallback: image clipboard e copy + WhatsApp khulo
     let copied = await copyImageModern(blob);
     if (!copied) copied = await copyImageLegacy(dataUrl);
 
-    downloadBlob(blob);
-
-    toast.info(
-      copied
-        ? "QR image copied! WhatsApp chat e Ctrl+V diye paste koro, tarpor Send."
-        : "QR image downloaded. WhatsApp chat e 📎 diye attach koro.",
-      { autoClose: 8000 },
-    );
+    if (copied) {
+      toast.info("QR image copied! WhatsApp chat e Ctrl+V diye paste koro.", {
+        autoClose: 8000,
+      });
+    } else {
+      // copy hoy nai tai shudhu tokhon-i download korbe
+      downloadBlob(blob);
+      toast.info("QR image downloaded. WhatsApp chat e 📎 diye attach koro.", {
+        autoClose: 8000,
+      });
+    }
 
     window.open(
       `https://wa.me/?text=${encodeURIComponent(shareText)}`,
@@ -204,7 +249,11 @@ const StoreQRCode = ({
     <div className="flex flex-col items-center gap-2">
       <div
         className="bg-white p-2 rounded-xl border flex items-center justify-center"
-        style={{ borderColor: "var(--border)", width: size + 16, minHeight: size + 16 }}
+        style={{
+          borderColor: "var(--border)",
+          width: size + 16,
+          minHeight: size + 16,
+        }}
       >
         {qrImageUrl ? (
           <img
@@ -239,19 +288,6 @@ const StoreQRCode = ({
             background: "var(--brand-primary)",
             color: "#fff",
             border: "1px solid var(--brand-primary-dark)",
-            padding: "6px 12px",
-          }}
-        />
-        <Button
-          icon="pi pi-whatsapp"
-          label="Share"
-          onClick={handleShareOnWhatsApp}
-          disabled={!qrImageUrl}
-          className="text-xs"
-          style={{
-            background: "#25D366",
-            color: "#fff",
-            border: "1px solid #1ebe57",
             padding: "6px 12px",
           }}
         />
