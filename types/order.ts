@@ -56,10 +56,11 @@ export type OrderRow = {
   totalAmount: number;
   deliveryAddress: DeliveryAddress;
   note?: string | null;
+  expectedDeliveryDate?: string | null;
   paymentMethod: "COD";
   paymentStatus: "PENDING" | "PAID";
   status: OrderStatus;
-  statusHistory?: StatusHistoryEntry[];   
+  statusHistory?: StatusHistoryEntry[];
   cancelReason?: string | null;
   cancelledBy?: "USER" | "STORE" | null;
   createdAt: string;

@@ -26,6 +26,9 @@ import {
   updateOrderStatusApi,
 } from "@/types/order";
 import { useNotifications } from "@/lib/NotificationContext";
+import DeliveryDateDialog, {
+  formatDeliveryDate,
+} from "@/components/orders/DeliveryDateDialog";
 
 const ENDPOINT = "/api/order/store-orders";
 
@@ -65,6 +68,13 @@ const mergeOrder = (prev: OrderRow, incoming: any): OrderRow => {
   return merged;
 };
 
+// delivery date shudhu ei status gulo te edit kora jay
+const DELIVERY_DATE_EDITABLE: OrderStatus[] = [
+  "PENDING",
+  "CONFIRMED",
+  "SHIPPED",
+];
+
 function OrdersPage() {
   const router = useRouter();
   const { markAllRead } = useNotifications();
@@ -86,6 +96,13 @@ function OrdersPage() {
   }>({ visible: false, orderId: null });
   const [cancelNote, setCancelNote] = useState("");
   const [cancelError, setCancelError] = useState("");
+
+  // delivery date dialog state (ship / edit)
+  const [dateDialog, setDateDialog] = useState<{
+    visible: boolean;
+    order: OrderRow | null;
+    mode: "ship" | "edit";
+  }>({ visible: false, order: null, mode: "edit" });
 
   // stale response guard
   const requestIdRef = useRef(0);
@@ -171,7 +188,9 @@ function OrdersPage() {
         await getOrders();
       } else {
         setOrderData((prev) =>
-          prev.map((o) => (o._id === orderId ? mergeOrder(o, res.data.order) : o)),
+          prev.map((o) =>
+            o._id === orderId ? mergeOrder(o, res.data.order) : o,
+          ),
         );
       }
       return true;
@@ -191,6 +210,12 @@ function OrdersPage() {
       return;
     }
 
+    // SHIPPED korar age delivery date nite hobe
+    if (newStatus === "SHIPPED") {
+      setDateDialog({ visible: true, order, mode: "ship" });
+      return;
+    }
+
     confirmDialog({
       message: `Change order #${order.orderNumber} status from "${order.status}" to "${newStatus}"?`,
       header: "Confirm Status Change",
@@ -198,6 +223,51 @@ function OrdersPage() {
       acceptClassName: "p-button-warning",
       accept: () => applyStatusChange(order._id, newStatus),
     });
+  };
+
+  const closeDateDialog = () =>
+    setDateDialog((d) => ({ ...d, visible: false }));
+
+  const confirmDeliveryDate = async (dateStr: string) => {
+    const order = dateDialog.order;
+    if (!order) return;
+    const isShip = dateDialog.mode === "ship";
+
+    try {
+      setUpdatingId(order._id);
+      const res = isShip
+        ? await axiosInstance.patch(`${ENDPOINT}/${order._id}/status`, {
+            status: "SHIPPED",
+            expectedDeliveryDate: dateStr,
+          })
+        : await axiosInstance.patch(`${ENDPOINT}/${order._id}/delivery-date`, {
+            expectedDeliveryDate: dateStr,
+          });
+
+      toast.success(
+        res.data.message ||
+          (isShip ? "Order marked as SHIPPED" : "Delivery date updated"),
+      );
+
+      if (isShip && statusFilter !== "ALL") {
+        await getOrders(); // filter on thakle row ar ei list e thakbe na
+      } else {
+        setOrderData((prev) =>
+          prev.map((o) =>
+            o._id === order._id ? mergeOrder(o, res.data.order) : o,
+          ),
+        );
+      }
+      closeDateDialog();
+    } catch (err: any) {
+      toast.error(
+        err?.response?.data?.errors?.[0]?.message ||
+          err?.response?.data?.message ||
+          "Failed to update delivery date",
+      );
+    } finally {
+      setUpdatingId(null);
+    }
   };
 
   const closeCancelDialog = () => {
@@ -259,13 +329,24 @@ function OrdersPage() {
     </div>
   );
 
-  // View + status-change dropdown ekshathe (SplitButton)
+  // View + status-change + delivery date dropdown ekshathe (SplitButton)
   const actionTemplate = (rowData: OrderRow) => {
-    const items = getNextStatuses(rowData.status).map((s) => ({
+    const items: any[] = getNextStatuses(rowData.status).map((s) => ({
       label: `Mark as ${s}`,
       icon: STATUS_ICONS[s],
       command: () => requestStatusChange(rowData, s),
     }));
+
+    if (DELIVERY_DATE_EDITABLE.includes(rowData.status)) {
+      items.unshift({
+        label: rowData.expectedDeliveryDate
+          ? "Edit delivery date"
+          : "Set delivery date",
+        icon: "pi pi-calendar",
+        command: () =>
+          setDateDialog({ visible: true, order: rowData, mode: "edit" }),
+      });
+    }
 
     return (
       <div onClick={(e) => e.stopPropagation()}>
@@ -289,7 +370,9 @@ function OrdersPage() {
       style={{ background: "linear-gradient(120deg,#3b82f6,#1d4ed8)" }}
     >
       <div className="min-w-0">
-        <h2 className="text-sm sm:text-base font-semibold text-white">Orders</h2>
+        <h2 className="text-sm sm:text-base font-semibold text-white">
+          Orders
+        </h2>
         <p className="text-xs text-blue-100">Manage customer orders</p>
       </div>
 
@@ -359,7 +442,9 @@ function OrdersPage() {
         {!loading && orderData.length === 0 && <EmptyState />}
 
         {viewMode === "card" && orderData.length > 0 && (
-          <div className={`p-2 ${loading ? "opacity-60 pointer-events-none" : ""}`}>
+          <div
+            className={`p-2 ${loading ? "opacity-60 pointer-events-none" : ""}`}
+          >
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
               {orderData.map((order) => {
                 const nextStatuses = getNextStatuses(order.status);
@@ -405,6 +490,10 @@ function OrdersPage() {
                         <p>
                           <span className="font-medium">💳 Payment:</span>{" "}
                           {order.paymentMethod} ({order.paymentStatus})
+                        </p>
+                        <p>
+                          <span className="font-medium">🚚 Delivery:</span>{" "}
+                          {formatDeliveryDate(order.expectedDeliveryDate)}
                         </p>
                       </div>
 
@@ -453,8 +542,8 @@ function OrdersPage() {
             <div className="flex flex-col sm:flex-row gap-2 sm:justify-between sm:items-center mt-4 p-2.5 border-t border-blue-100">
               <p className="text-sm text-gray-600">
                 Showing {(pagination.page - 1) * pagination.rows + 1} to{" "}
-                {Math.min(pagination.page * pagination.rows, pagination.total)} of{" "}
-                {pagination.total} orders
+                {Math.min(pagination.page * pagination.rows, pagination.total)}{" "}
+                of {pagination.total} orders
               </p>
               <div className="flex gap-2 items-center">
                 <Button
@@ -474,7 +563,9 @@ function OrdersPage() {
                   icon="pi pi-chevron-right"
                   onClick={() =>
                     setPagination((prev) =>
-                      prev.page < totalPages ? { ...prev, page: prev.page + 1 } : prev,
+                      prev.page < totalPages
+                        ? { ...prev, page: prev.page + 1 }
+                        : prev,
                     )
                   }
                   disabled={pagination.page >= totalPages}
@@ -513,9 +604,17 @@ function OrdersPage() {
             <Column header="Amount" body={amountTemplate} />
             <Column
               header="Payment"
-              body={(row: OrderRow) => `${row.paymentMethod} • ${row.paymentStatus}`}
+              body={(row: OrderRow) =>
+                `${row.paymentMethod} • ${row.paymentStatus}`
+              }
             />
             <Column header="Status" body={statusTemplate} />
+            <Column
+              header="Delivery"
+              body={(row: OrderRow) =>
+                formatDeliveryDate(row.expectedDeliveryDate)
+              }
+            />
             <Column
               header="Placed On"
               body={(row: OrderRow) => formatDate(row.createdAt)}
@@ -576,6 +675,26 @@ function OrdersPage() {
             />
           </div>
         </Dialog>
+
+        {/* Expected delivery date dialog (ship / edit) */}
+        <DeliveryDateDialog
+          visible={dateDialog.visible}
+          title={
+            dateDialog.mode === "ship"
+              ? `Ship Order #${dateDialog.order?.orderNumber ?? ""}`
+              : "Expected Delivery Date"
+          }
+          description={
+            dateDialog.mode === "ship"
+              ? "Set when this order will reach the customer, then it will be marked as Shipped."
+              : "Set or change when this order will reach the customer."
+          }
+          confirmLabel={dateDialog.mode === "ship" ? "Ship Order" : "Save Date"}
+          loading={updatingId === dateDialog.order?._id}
+          initialDate={dateDialog.order?.expectedDeliveryDate}
+          onHide={closeDateDialog}
+          onConfirm={confirmDeliveryDate}
+        />
 
         <ConfirmDialog />
         <ToastContainer position="top-right" />

@@ -150,7 +150,7 @@ const cleanTiers = (tiers: any) => {
 const validateTiers = (
   label: string,
   rawTiers: any,
-  mrp: any,
+  _mrp?: any, // tier price er sathe MRP check nei
 ): string | null => {
   if (!Array.isArray(rawTiers) || rawTiers.length === 0) return null;
   const tiers = cleanTiers(rawTiers);
@@ -162,17 +162,15 @@ const validateTiers = (
 
     if (isNil(t.price)) return `${n}price is required`;
     if (Number(t.price) < 0) return `${n}price cannot be negative`;
-    if (!isNil(mrp) && Number(t.price) > Number(mrp))
-      return `${n}price cannot be greater than MRP`;
 
-    if (!isLast) {
-      if (isNil(t.maxQty))
-        return `${n}max quantity is required (only the last tier can be empty = no limit)`;
-      if (!Number.isInteger(t.maxQty) || Number(t.maxQty) < Number(t.minQty))
-        return `${n}max quantity must be a whole number >= ${t.minQty}`;
-    } else if (!isNil(t.maxQty)) {
-      if (!Number.isInteger(t.maxQty) || Number(t.maxQty) < Number(t.minQty))
-        return `${n}max quantity must be a whole number >= ${t.minQty}`;
+    if (!isLast && isNil(t.maxQty)) {
+      return `${n}max quantity is required (only the last tier can be empty = no limit)`;
+    }
+    if (
+      !isNil(t.maxQty) &&
+      (!Number.isInteger(t.maxQty) || Number(t.maxQty) < Number(t.minQty))
+    ) {
+      return `${n}max quantity must be a whole number >= ${t.minQty}`;
     }
   }
   return null;

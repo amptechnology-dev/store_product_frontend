@@ -23,6 +23,9 @@ import {
   getNextStatuses,
   updateOrderStatusApi,
 } from "@/types/order";
+import DeliveryDateDialog, {
+  formatDeliveryDate,
+} from "@/components/orders/DeliveryDateDialog";
 
 const WORKER_ENDPOINT = "/api/worker/all-workers";
 
@@ -192,6 +195,10 @@ function OrderDetailsPage() {
   const [cancelDialogVisible, setCancelDialogVisible] = useState(false);
   const [cancelNote, setCancelNote] = useState("");
   const [cancelError, setCancelError] = useState("");
+  const [dateDialog, setDateDialog] = useState<{
+    visible: boolean;
+    mode: "ship" | "edit";
+  }>({ visible: false, mode: "edit" });
 
   // ---- Multi-select state ----
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -253,6 +260,12 @@ function OrderDetailsPage() {
       return;
     }
 
+    // SHIPPED korar age delivery date nite hobe
+    if (newStatus === "SHIPPED") {
+      setDateDialog({ visible: true, mode: "ship" });
+      return;
+    }
+
     confirmDialog({
       message: `Change order status from "${order.status}" to "${newStatus}"?`,
       header: "Confirm Status Change",
@@ -260,6 +273,37 @@ function OrderDetailsPage() {
       acceptClassName: "p-button-warning",
       accept: () => applyStatusChange(newStatus),
     });
+  };
+
+  const confirmDeliveryDate = async (dateStr: string) => {
+    if (!order) return;
+    const isShip = dateDialog.mode === "ship";
+    try {
+      setUpdating(true);
+      const res = isShip
+        ? await axiosInstance.patch(
+            `/api/order/store-orders/${order._id}/status`,
+            { status: "SHIPPED", expectedDeliveryDate: dateStr },
+          )
+        : await axiosInstance.patch(
+            `/api/order/store-orders/${order._id}/delivery-date`,
+            { expectedDeliveryDate: dateStr },
+          );
+      toast.success(
+        res.data.message ||
+          (isShip ? "Order marked as SHIPPED" : "Delivery date updated"),
+      );
+      setOrder((prev) => (prev ? { ...prev, ...res.data.order } : prev));
+      setDateDialog((d) => ({ ...d, visible: false }));
+    } catch (err: any) {
+      toast.error(
+        err?.response?.data?.errors?.[0]?.message ||
+          err?.response?.data?.message ||
+          "Failed to update delivery date",
+      );
+    } finally {
+      setUpdating(false);
+    }
   };
 
   const closeCancelDialog = () => {
@@ -304,7 +348,9 @@ function OrderDetailsPage() {
         params: { limit: 100 },
       });
       setKarigars(
-        (res.data.workers || []).filter((w: KarigarRow) => w.isActive !== false),
+        (res.data.workers || []).filter(
+          (w: KarigarRow) => w.isActive !== false,
+        ),
       );
     } catch {
       toast.error("Failed to load karigars");
@@ -364,6 +410,10 @@ function OrderDetailsPage() {
   const isTerminal = TERMINAL_STATUSES.includes(order.status);
   const nextStatuses = getNextStatuses(order.status);
 
+  const canEditDeliveryDate = ["PENDING", "CONFIRMED", "SHIPPED"].includes(
+    order.status,
+  );
+
   return (
     <div className="w-full flex justify-start items-start pt-2">
       <div className="w-full bg-white rounded-lg shadow p-3 sm:p-4 space-y-3">
@@ -391,7 +441,10 @@ function OrderDetailsPage() {
                 {order.userId?.name}
                 <span className="text-blue-100"> • {order.userId?.phone}</span>
                 {order.userId?.email && (
-                  <span className="text-blue-100"> • {order.userId?.email}</span>
+                  <span className="text-blue-100">
+                    {" "}
+                    • {order.userId?.email}
+                  </span>
                 )}
               </p>
             </div>
@@ -408,7 +461,8 @@ function OrderDetailsPage() {
         <div className="flex flex-wrap items-center gap-2">
           {isTerminal ? (
             <p className="text-xs text-gray-500 italic">
-              This order is {order.status.toLowerCase()} — status can no longer be changed.
+              This order is {order.status.toLowerCase()} — status can no longer
+              be changed.
             </p>
           ) : (
             nextStatuses.map((s) => (
@@ -422,7 +476,11 @@ function OrderDetailsPage() {
                 style={
                   s === "CANCELLED"
                     ? undefined
-                    : { background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe" }
+                    : {
+                        background: "#eff6ff",
+                        color: "#1d4ed8",
+                        border: "1px solid #bfdbfe",
+                      }
                 }
               />
             ))
@@ -518,7 +576,9 @@ function OrderDetailsPage() {
                       )}
 
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-800 line-clamp-1">{item.name}</p>
+                        <p className="text-sm font-medium text-gray-800 line-clamp-1">
+                          {item.name}
+                        </p>
                         <p className="text-xs text-gray-500">
                           Code: {item.productCode || "-"} • {item.unit}
                           {item.size ? ` • ${item.size}` : ""}
@@ -557,12 +617,16 @@ function OrderDetailsPage() {
 
             {/* Delivery Address */}
             <div className="border border-blue-100 rounded-lg p-3 text-sm">
-              <p className="font-semibold text-gray-700 mb-1.5">Delivery Address</p>
+              <p className="font-semibold text-gray-700 mb-1.5">
+                Delivery Address
+              </p>
               <p className="text-gray-800">{order.deliveryAddress.fullName}</p>
               <p className="text-gray-600">{order.deliveryAddress.phone}</p>
               <p className="text-gray-600">
                 {order.deliveryAddress.addressLine}
-                {order.deliveryAddress.area ? `, ${order.deliveryAddress.area}` : ""}
+                {order.deliveryAddress.area
+                  ? `, ${order.deliveryAddress.area}`
+                  : ""}
               </p>
               <p className="text-gray-600">
                 {order.deliveryAddress.city}, {order.deliveryAddress.state} -{" "}
@@ -578,55 +642,70 @@ function OrderDetailsPage() {
 
             {order.status === "CANCELLED" && order.cancelReason && (
               <div className="border border-red-200 bg-red-50 rounded-lg p-3 text-sm">
-                <p className="font-semibold text-red-700">Cancellation Reason</p>
+                <p className="font-semibold text-red-700">
+                  Cancellation Reason
+                </p>
                 <p className="text-red-600 mt-1">{order.cancelReason}</p>
-                <p className="text-xs text-red-400 mt-1">Cancelled by: {order.cancelledBy}</p>
+                <p className="text-xs text-red-400 mt-1">
+                  Cancelled by: {order.cancelledBy}
+                </p>
               </div>
             )}
 
             {/* Status history */}
-            {order.statusHistory && (order as any).statusHistory?.length > 0 && (
-              <div className="border border-blue-100 rounded-lg p-3 text-sm">
-                <p className="font-semibold text-gray-700 mb-1.5">Status History</p>
-                <div className="space-y-1">
-                  {(order as any).statusHistory.map((h: any, i: number) => (
-                    <div key={i} className="flex justify-between text-xs text-gray-600">
-                      <span className={`px-2 py-0.5 rounded-full ${STATUS_STYLES[h.status as OrderStatus]}`}>
-                        {h.status}
-                      </span>
-                      <span>{formatDate(h.at)}</span>
-                    </div>
-                  ))}
+            {order.statusHistory &&
+              (order as any).statusHistory?.length > 0 && (
+                <div className="border border-blue-100 rounded-lg p-3 text-sm">
+                  <p className="font-semibold text-gray-700 mb-1.5">
+                    Status History
+                  </p>
+                  <div className="space-y-1">
+                    {(order as any).statusHistory.map((h: any, i: number) => (
+                      <div
+                        key={i}
+                        className="flex justify-between text-xs text-gray-600"
+                      >
+                        <span
+                          className={`px-2 py-0.5 rounded-full ${STATUS_STYLES[h.status as OrderStatus]}`}
+                        >
+                          {h.status}
+                        </span>
+                        <span>{formatDate(h.at)}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
           </div>
 
-          {/* Right: Order Summary only (Customer moved to header) */}
-          <div className="space-y-3">
-            <div className="border border-blue-100 rounded-lg p-3 text-sm space-y-1.5">
-              <p className="font-semibold text-gray-700 mb-1">Order Summary</p>
-              <div className="flex justify-between text-gray-600">
-                <span>Total MRP</span>
-                <span>₹{order.totalMrp.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between text-green-700">
-                <span>Discount</span>
-                <span>- ₹{order.discount.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between font-semibold text-gray-800 pt-1.5 border-t border-gray-100">
-                <span>Total Amount</span>
-                <span>₹{order.totalAmount.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between text-gray-600 pt-1.5">
-                <span>Payment Method</span>
-                <span>{order.paymentMethod}</span>
-              </div>
-              <div className="flex justify-between text-gray-600">
-                <span>Payment Status</span>
-                <span>{order.paymentStatus}</span>
-              </div>
+          <div className="border border-blue-100 rounded-lg p-3 text-sm">
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="font-semibold text-gray-700">Expected Delivery</p>
+              {canEditDeliveryDate && (
+                <Button
+                  label={order.expectedDeliveryDate ? "Edit" : "Set date"}
+                  icon="pi pi-calendar"
+                  size="small"
+                  text
+                  onClick={() => setDateDialog({ visible: true, mode: "edit" })}
+                />
+              )}
             </div>
+            <p
+              className={
+                order.expectedDeliveryDate
+                  ? "text-gray-800 font-medium"
+                  : "text-gray-400"
+              }
+            >
+              <i className="pi pi-truck mr-1.5"></i>
+              {formatDeliveryDate(order.expectedDeliveryDate)}
+            </p>
+            {!order.expectedDeliveryDate && canEditDeliveryDate && (
+              <p className="text-[11px] text-gray-400 mt-1">
+                Required before marking as Shipped
+              </p>
+            )}
           </div>
         </div>
 
@@ -734,11 +813,15 @@ function OrderDetailsPage() {
 
           <div className="flex flex-col gap-1.5 max-h-72 overflow-y-auto">
             {karigarLoading && (
-              <p className="text-xs text-gray-400 text-center py-4">Loading karigars...</p>
+              <p className="text-xs text-gray-400 text-center py-4">
+                Loading karigars...
+              </p>
             )}
 
             {!karigarLoading && filteredKarigars.length === 0 && (
-              <p className="text-xs text-gray-400 text-center py-4">No karigar found</p>
+              <p className="text-xs text-gray-400 text-center py-4">
+                No karigar found
+              </p>
             )}
 
             {!karigarLoading &&
@@ -749,7 +832,9 @@ function OrderDetailsPage() {
                   className="flex items-center justify-between gap-2 border border-gray-200 rounded-md px-3 py-2 hover:bg-green-50 hover:border-green-300 transition-colors text-left"
                 >
                   <div>
-                    <p className="text-sm font-medium text-gray-800">{k.name}</p>
+                    <p className="text-sm font-medium text-gray-800">
+                      {k.name}
+                    </p>
                     <p className="text-xs text-gray-500">{k.whatsappNo}</p>
                   </div>
                   <i className="pi pi-whatsapp text-green-600 text-lg" />
@@ -757,6 +842,23 @@ function OrderDetailsPage() {
               ))}
           </div>
         </Dialog>
+
+        <DeliveryDateDialog
+          visible={dateDialog.visible}
+          title={
+            dateDialog.mode === "ship" ? "Ship Order" : "Expected Delivery Date"
+          }
+          description={
+            dateDialog.mode === "ship"
+              ? "Set when this order will reach the customer, then it will be marked as Shipped."
+              : "Set or change when this order will reach the customer."
+          }
+          confirmLabel={dateDialog.mode === "ship" ? "Ship Order" : "Save Date"}
+          loading={updating}
+          initialDate={order.expectedDeliveryDate}
+          onHide={() => setDateDialog((d) => ({ ...d, visible: false }))}
+          onConfirm={confirmDeliveryDate}
+        />
 
         <ConfirmDialog />
         <ToastContainer position="top-right" />
