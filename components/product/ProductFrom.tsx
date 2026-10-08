@@ -105,6 +105,9 @@ const isValidObjectId = (id?: string | null) =>
 
 const isNil = (v: any) => v === undefined || v === null || v === "";
 
+// nil hole undefined (JSON.stringify e key ta bad jabe), noile value
+const numOrUndef = (v: any) => (isNil(v) ? undefined : v);
+
 const hasAttribute = (v: any) =>
   !!(
     String(v?.size ?? "").trim() ||
@@ -586,9 +589,8 @@ function SizeVariantRow({
           />
         </div>
         <div className="space-y-1 min-w-0">
-          <label className="text-[10px] font-semibold text-gray-600">
-            MRP <span className="text-red-500">*</span>
-          </label>
+          {/* MRP ekhon optional, tai red * nei */}
+          <label className="text-[10px] font-semibold text-gray-600">MRP</label>
           <Controller
             name={`${basePath}.mrp` as any}
             control={control}
@@ -603,6 +605,7 @@ function SizeVariantRow({
                 minFractionDigits={2}
                 maxFractionDigits={2}
                 useGrouping={false}
+                placeholder="Optional"
               />
             )}
           />
@@ -855,8 +858,9 @@ function ColorVariantBlock({
             }`}
           >
             <div className="space-y-1 min-w-0">
+              {/* MRP ekhon optional, tai red * nei */}
               <label className="text-[10px] font-semibold text-gray-600">
-                MRP <span className="text-red-500">*</span>
+                MRP
               </label>
               <Controller
                 name={`variants.${colorIndex}.mrp` as any}
@@ -872,6 +876,7 @@ function ColorVariantBlock({
                     minFractionDigits={2}
                     maxFractionDigits={2}
                     useGrouping={false}
+                    placeholder="Optional"
                   />
                 )}
               />
@@ -1444,7 +1449,8 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
       );
 
       if (rawVariants.length === 0) {
-        setValue("mrp", product.mrp ?? 0);
+        // MRP optional: nai hole 0 na boshiye faka rakhi
+        setValue("mrp", product.mrp ?? undefined);
         setValue("offerPrice", product.offerPrice ?? undefined);
         setValue("openingStock", product.openingStock ?? 0);
         setValue("lowStockThreshold" as any, product.lowStockThreshold ?? 0);
@@ -1483,8 +1489,8 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
                     size: sv.size || "",
                     weight: sv.weight || "",
                     height: sv.height || "",
-                    mrp: sv.mrp,
-                    offerPrice: sv.offerPrice,
+                    mrp: sv.mrp ?? undefined,
+                    offerPrice: sv.offerPrice ?? undefined,
                     openingStock: sv.openingStock ?? 0,
                     lowStockThreshold: sv.lowStockThreshold ?? 0,
                     sku: sv.sku || "",
@@ -1512,8 +1518,8 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
               size: v.size || "",
               weight: v.weight || "",
               height: v.height || "",
-              mrp: v.mrp,
-              offerPrice: v.offerPrice,
+              mrp: v.mrp ?? undefined,
+              offerPrice: v.offerPrice ?? undefined,
               openingStock: v.openingStock ?? 0,
               lowStockThreshold: v.lowStockThreshold ?? 0,
               sku: v.sku || "",
@@ -1575,9 +1581,9 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
   };
 
   // ---------- Validation ----------
+  // MRP ekhon optional. Offer price > MRP check shudhu duita-i thakle.
   const priceError = (label: string, mrp: any, offer: any): string | null => {
-    if (isNil(mrp)) return `${label}MRP is required`;
-    if (!isNil(offer) && Number(offer) > Number(mrp))
+    if (!isNil(mrp) && !isNil(offer) && Number(offer) > Number(mrp))
       return `${label}Offer price cannot be greater than MRP`;
     return null;
   };
@@ -1716,7 +1722,8 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
           : { openingStock: 0, lowStockThreshold: 0 };
 
       if (!hasVariants) {
-        formData.append("mrp", String(values.mrp ?? 0));
+        // MRP optional: faka hole field-i pathabo na (0 pathabo na)
+        if (!isNil(values.mrp)) formData.append("mrp", String(values.mrp));
         if (!isNil(values.offerPrice))
           formData.append("offerPrice", String(values.offerPrice));
         // [STOCK] main product er stock
@@ -1766,8 +1773,8 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
                   size: sv.size || undefined,
                   weight: sv.weight || undefined,
                   height: sv.height || undefined,
-                  mrp: sv.mrp,
-                  offerPrice: isNil(sv.offerPrice) ? undefined : sv.offerPrice,
+                  mrp: numOrUndef(sv.mrp),
+                  offerPrice: numOrUndef(sv.offerPrice),
                   ...stockOf(sv), // [STOCK]
                   sku: sv.sku || undefined,
                   priceTiers: cleanTiers(sv.priceTiers), // [TIER]
@@ -1783,8 +1790,8 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
             return {
               color,
               images: imgState.existing,
-              mrp: v.mrp,
-              offerPrice: isNil(v.offerPrice) ? undefined : v.offerPrice,
+              mrp: numOrUndef(v.mrp),
+              offerPrice: numOrUndef(v.offerPrice),
               ...stockOf(v), // [STOCK]
               sku: v.sku || undefined,
               priceTiers: cleanTiers(v.priceTiers), // [TIER]
@@ -1800,8 +1807,8 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
             size: v.size || undefined,
             weight: v.weight || undefined,
             height: v.height || undefined,
-            mrp: v.mrp,
-            offerPrice: isNil(v.offerPrice) ? undefined : v.offerPrice,
+            mrp: numOrUndef(v.mrp),
+            offerPrice: numOrUndef(v.offerPrice),
             ...stockOf(v), // [STOCK]
             sku: v.sku || undefined,
             priceTiers: cleanTiers(v.priceTiers), // [TIER]
@@ -2107,9 +2114,8 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
             }`}
           >
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-gray-700">
-                MRP {!hasVariants && <span className="text-red-500">*</span>}
-              </label>
+              {/* MRP optional, tai red * nei */}
+              <label className="text-xs font-semibold text-gray-700">MRP</label>
               <Controller
                 name="mrp"
                 control={control}
@@ -2117,7 +2123,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
                   <InputNumber
                     value={f.value ?? null}
                     onValueChange={(e) => onGlobalChange("mrp", e.value)}
-                    placeholder="MRP"
+                    placeholder="Optional"
                     min={0}
                     className="w-full"
                     inputClassName="w-full"

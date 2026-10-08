@@ -23,6 +23,7 @@ import {
   STATUS_STYLES,
   STATUS_ICONS,
   getNextStatuses,
+  isQuotePending,
   updateOrderStatusApi,
 } from "@/types/order";
 import { useNotifications } from "@/lib/NotificationContext";
@@ -58,6 +59,29 @@ const Spinner = () => (
     <i className="pi pi-spin pi-spinner text-3xl text-gray-400" />
   </div>
 );
+
+// price on request order: store estimate dibe / user accept korbe
+const QuoteBadge = ({ order }: { order: OrderRow }) => {
+  if (order.priceStatus === "AWAITING_QUOTE")
+    return (
+      <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800 whitespace-nowrap">
+        Quote needed
+      </span>
+    );
+  if (order.priceStatus === "QUOTED")
+    return (
+      <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-purple-100 text-purple-800 whitespace-nowrap">
+        Awaiting customer
+      </span>
+    );
+  return null;
+};
+
+// price estimate pending thakle CONFIRMED option hide
+const availableStatuses = (order: OrderRow): OrderStatus[] =>
+  getNextStatuses(order.status).filter(
+    (s) => !(s === "CONFIRMED" && isQuotePending(order)),
+  );
 
 // status response e userId string ashle purono populated customer rekhe dao
 const mergeOrder = (prev: OrderRow, incoming: any): OrderRow => {
@@ -318,20 +342,35 @@ function OrdersPage() {
     </span>
   );
 
-  const amountTemplate = (rowData: OrderRow) => (
-    <div>
-      <p className="font-semibold text-gray-800">
-        ₹{Number(rowData.totalAmount).toFixed(2)}
-      </p>
-      <p className="text-xs text-gray-400 line-through">
-        ₹{Number(rowData.totalMrp).toFixed(2)}
-      </p>
-    </div>
-  );
+  const amountTemplate = (rowData: OrderRow) => {
+    // price estimate pending hole amount-er jaygay badge
+    if (isQuotePending(rowData)) {
+      return (
+        <div className="space-y-0.5">
+          <QuoteBadge order={rowData} />
+          {rowData.priceStatus === "QUOTED" && rowData.quote && (
+            <p className="text-xs text-gray-500">
+              Est. ₹{Number(rowData.quote.total).toFixed(2)}
+            </p>
+          )}
+        </div>
+      );
+    }
+    return (
+      <div>
+        <p className="font-semibold text-gray-800">
+          ₹{Number(rowData.totalAmount).toFixed(2)}
+        </p>
+        <p className="text-xs text-gray-400 line-through">
+          ₹{Number(rowData.totalMrp).toFixed(2)}
+        </p>
+      </div>
+    );
+  };
 
   // View + status-change + delivery date dropdown ekshathe (SplitButton)
   const actionTemplate = (rowData: OrderRow) => {
-    const items: any[] = getNextStatuses(rowData.status).map((s) => ({
+    const items: any[] = availableStatuses(rowData).map((s) => ({
       label: `Mark as ${s}`,
       icon: STATUS_ICONS[s],
       command: () => requestStatusChange(rowData, s),
@@ -345,6 +384,18 @@ function OrdersPage() {
         icon: "pi pi-calendar",
         command: () =>
           setDateDialog({ visible: true, order: rowData, mode: "edit" }),
+      });
+    }
+
+    // price estimate pending: details page e giye price dite hobe
+    if (rowData.status === "PENDING" && isQuotePending(rowData)) {
+      items.unshift({
+        label:
+          rowData.priceStatus === "QUOTED"
+            ? "Revise price estimate"
+            : "Send price estimate",
+        icon: "pi pi-tag",
+        command: () => goToDetails(rowData._id),
       });
     }
 
@@ -447,7 +498,7 @@ function OrdersPage() {
           >
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
               {orderData.map((order) => {
-                const nextStatuses = getNextStatuses(order.status);
+                const nextStatuses = availableStatuses(order);
                 const customer = getCustomer(order);
                 return (
                   <div
@@ -498,12 +549,25 @@ function OrdersPage() {
                       </div>
 
                       <div className="flex justify-between items-center pt-1.5 border-t border-blue-100 mt-0.5">
-                        <span className="text-sm font-semibold text-blue-700">
-                          ₹{Number(order.totalAmount).toFixed(2)}
-                        </span>
-                        <span className="text-xs text-gray-400 line-through">
-                          ₹{Number(order.totalMrp).toFixed(2)}
-                        </span>
+                        {isQuotePending(order) ? (
+                          <>
+                            <QuoteBadge order={order} />
+                            {order.priceStatus === "QUOTED" && order.quote && (
+                              <span className="text-xs text-gray-500">
+                                Est. ₹{Number(order.quote.total).toFixed(2)}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-sm font-semibold text-blue-700">
+                              ₹{Number(order.totalAmount).toFixed(2)}
+                            </span>
+                            <span className="text-xs text-gray-400 line-through">
+                              ₹{Number(order.totalMrp).toFixed(2)}
+                            </span>
+                          </>
+                        )}
                       </div>
                     </div>
 

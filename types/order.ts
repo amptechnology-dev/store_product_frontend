@@ -7,6 +7,13 @@ export type OrderStatus =
   | "DELIVERED"
   | "CANCELLED";
 
+// price on request flow
+export type PriceStatus =
+  | "NOT_REQUIRED"
+  | "AWAITING_QUOTE"
+  | "QUOTED"
+  | "CONFIRMED";
+
 export type OrderItem = {
   _id: string;
   productId: string;
@@ -14,12 +21,16 @@ export type OrderItem = {
   productCode?: string;
   image?: string | null;
   unit?: string;
+  color?: string | null;
   size?: string | null;
   weight?: string | null;
-  mrp: number;
-  offerPrice: number;
+  height?: string | null;
+  // price on request item e quote accept howar age null
+  mrp: number | null;
+  offerPrice: number | null;
   quantity: number;
-  lineTotal: number;
+  lineTotal: number | null;
+  priceOnRequest?: boolean;
 };
 
 export type DeliveryAddress = {
@@ -36,6 +47,21 @@ export type DeliveryAddress = {
 export type StatusHistoryEntry = {
   status: OrderStatus;
   changedBy?: string;
+  note?: string | null;
+  at: string;
+};
+
+export type OrderQuote = {
+  items: { itemId: string; unitPrice: number }[];
+  total: number;
+  note?: string | null;
+  quotedAt: string;
+};
+
+export type PriceHistoryEntry = {
+  action: "QUOTED" | "ACCEPTED" | "REJECTED";
+  byRole: "STORE" | "USER";
+  total?: number;
   note?: string | null;
   at: string;
 };
@@ -61,6 +87,10 @@ export type OrderRow = {
   paymentStatus: "PENDING" | "PAID";
   status: OrderStatus;
   statusHistory?: StatusHistoryEntry[];
+  // purono order e field na-o thakte pare (undefined = NOT_REQUIRED)
+  priceStatus?: PriceStatus;
+  quote?: OrderQuote | null;
+  priceHistory?: PriceHistoryEntry[];
   cancelReason?: string | null;
   cancelledBy?: "USER" | "STORE" | null;
   createdAt: string;
@@ -108,6 +138,10 @@ export const ALLOWED_FROM: Partial<Record<OrderStatus, OrderStatus[]>> = {
 export const getNextStatuses = (current: OrderStatus): OrderStatus[] =>
   ORDER_STATUSES.filter((target) => ALLOWED_FROM[target]?.includes(current));
 
+/** Store price estimate pathay / user accept-er opekkhay (CONFIRMED kora jabe na) */
+export const isQuotePending = (o: { priceStatus?: PriceStatus }) =>
+  o.priceStatus === "AWAITING_QUOTE" || o.priceStatus === "QUOTED";
+
 /** PATCH /store-orders/:orderId/status */
 export const updateOrderStatusApi = (
   orderId: string,
@@ -116,5 +150,16 @@ export const updateOrderStatusApi = (
 ) =>
   axiosInstance.patch(`/api/order/store-orders/${orderId}/status`, {
     status,
+    ...(note ? { note } : {}),
+  });
+
+/** PATCH /store-orders/:orderId/quote */
+export const submitQuoteApi = (
+  orderId: string,
+  items: { itemId: string; unitPrice: number }[],
+  note?: string,
+) =>
+  axiosInstance.patch(`/api/order/store-orders/${orderId}/quote`, {
+    items,
     ...(note ? { note } : {}),
   });

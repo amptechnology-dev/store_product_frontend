@@ -8,6 +8,21 @@ const objectIdSchema = zod
   .string()
   .regex(/^[a-fA-F0-9]{24}$/, "Invalid ObjectId");
 
+// ===============================
+// OPTIONAL NUMBER (MRP / Offer Price er jonno)
+// null, "", undefined, NaN -> undefined hoye jay (coerce(null) = 0 hobe na)
+// ===============================
+const optionalNumber = zod.preprocess(
+  (v) =>
+    v === "" ||
+    v === null ||
+    v === undefined ||
+    (typeof v === "number" && Number.isNaN(v))
+      ? undefined
+      : v,
+  zod.coerce.number().nonnegative().optional(),
+);
+
 export const LoginSchema = zod.object({
   email: zod
     .string()
@@ -74,8 +89,8 @@ export const sizeVariantSchema = zod.object({
   size: zod.string().trim().optional(),
   weight: zod.string().trim().optional(),
   height: zod.string().trim().optional(),
-  mrp: zod.coerce.number().nonnegative().optional(),
-  offerPrice: zod.coerce.number().nonnegative().optional(),
+  mrp: optionalNumber, // MRP optional
+  offerPrice: optionalNumber,
   openingStock: zod.coerce.number().nonnegative().optional().default(0),
   currentStock: zod.coerce.number().nonnegative().optional(),
   lowStockThreshold: zod.coerce.number().nonnegative().optional().default(0),
@@ -91,8 +106,8 @@ export const colorVariantSchema = zod.object({
   _id: zod.string().optional(),
   color: zod.string().trim().optional(),
   images: zod.array(zod.string()).optional(),
-  mrp: zod.coerce.number().nonnegative().optional(),
-  offerPrice: zod.coerce.number().nonnegative().optional(),
+  mrp: optionalNumber, // MRP optional
+  offerPrice: optionalNumber,
   openingStock: zod.coerce.number().nonnegative().optional().default(0),
   currentStock: zod.coerce.number().nonnegative().optional(),
   lowStockThreshold: zod.coerce.number().nonnegative().optional().default(0),
@@ -110,8 +125,8 @@ export const createProductSchema = zod.object({
   categoryId: zod.string().min(1, "Category is required"),
 
   // Simple (no-variant) product fields
-  mrp: zod.coerce.number().min(0).optional(),
-  offerPrice: zod.coerce.number().min(0).optional(),
+  mrp: optionalNumber, // MRP optional
+  offerPrice: optionalNumber,
   openingStock: zod.coerce.number().min(0).optional(),
   lowStockThreshold: zod.coerce.number().min(0).optional(),
   packagingDetails: packagingDetailsSchema,

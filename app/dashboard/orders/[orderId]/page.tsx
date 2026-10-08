@@ -10,6 +10,7 @@ import { Checkbox } from "primereact/checkbox";
 import { Dialog } from "primereact/dialog";
 import { InputTextarea } from "primereact/inputtextarea";
 import { InputText } from "primereact/inputtext";
+import { InputNumber } from "primereact/inputnumber";
 import { IconField } from "primereact/iconfield";
 import { InputIcon } from "primereact/inputicon";
 import { ConfirmDialog, confirmDialog } from "primereact/confirmdialog";
@@ -21,6 +22,7 @@ import {
   STATUS_ICONS,
   TERMINAL_STATUSES,
   getNextStatuses,
+  isQuotePending,
   updateOrderStatusApi,
 } from "@/types/order";
 import DeliveryDateDialog, {
@@ -184,6 +186,149 @@ const buildShareMessage = (items: any[]) => {
     .join("\n\n");
 };
 
+// ===============================================================
+// Price estimate panel (price on request item gulor jonno)
+// ===============================================================
+function QuotePanel({
+  order,
+  submitting,
+  onSubmit,
+}: {
+  order: OrderRow;
+  submitting: boolean;
+  onSubmit: (
+    items: { itemId: string; unitPrice: number }[],
+    note?: string,
+  ) => void;
+}) {
+  const allItems = ((order.items as any[]) || []) as any[];
+  const items = allItems.filter((i) => i.priceOnRequest);
+  const pricedTotal = allItems
+    .filter((i) => !i.priceOnRequest)
+    .reduce((s, i) => s + (i.lineTotal || 0), 0);
+
+  const [prices, setPrices] = useState<Record<string, number | null>>(() => {
+    const init: Record<string, number | null> = {};
+    items.forEach((i) => {
+      const q = order.quote?.items?.find((x) => x.itemId === i._id);
+      init[i._id] = q ? q.unitPrice : null;
+    });
+    return init;
+  });
+  const [note, setNote] = useState(order.quote?.note || "");
+
+  const estimatedTotal =
+    pricedTotal +
+    items.reduce((s, i) => s + (prices[i._id] || 0) * i.quantity, 0);
+
+  const lastRejection = [...(order.priceHistory || [])]
+    .reverse()
+    .find((h) => h.action === "REJECTED");
+
+  const isQuoted = order.priceStatus === "QUOTED";
+
+  const handleSubmit = () => {
+    const missing = items.find((i) => !prices[i._id] || prices[i._id]! <= 0);
+    if (missing) {
+      toast.error(`Enter a price for "${missing.name}"`);
+      return;
+    }
+    onSubmit(
+      items.map((i) => ({ itemId: i._id, unitPrice: Number(prices[i._id]) })),
+      note.trim() || undefined,
+    );
+  };
+
+  return (
+    <div className="border border-amber-200 bg-amber-50/60 rounded-lg overflow-hidden">
+      <div className="px-3 py-2 bg-amber-100 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold text-amber-900">
+          <i className="pi pi-tag mr-1.5"></i>
+          Price estimate
+        </p>
+        <span className="text-[11px] font-semibold text-amber-800">
+          {isQuoted
+            ? "Sent — waiting for customer (you can revise)"
+            : "Customer is waiting for your price"}
+        </span>
+      </div>
+
+      <div className="p-3 space-y-2">
+        {lastRejection && !isQuoted && (
+          <div className="text-xs bg-red-50 border border-red-200 text-red-700 rounded-md p-2">
+            Customer declined the last estimate
+            {lastRejection.total ? ` (₹${lastRejection.total})` : ""}
+            {lastRejection.note ? ` — "${lastRejection.note}"` : ""}. Send a
+            new price.
+          </div>
+        )}
+
+        {items.map((item) => (
+          <div
+            key={item._id}
+            className="flex flex-wrap items-center gap-2 bg-white border border-amber-100 rounded-md p-2"
+          >
+            <div className="flex-1 min-w-[160px]">
+              <p className="text-sm font-medium text-gray-800 line-clamp-1">
+                {item.name}
+              </p>
+              <p className="text-xs text-gray-500">
+                {[item.color, item.size, item.weight, item.height]
+                  .filter(Boolean)
+                  .join(" • ") || "—"}{" "}
+                • Qty {item.quantity}
+              </p>
+            </div>
+            <div className="w-36">
+              <label className="text-[10px] font-medium text-gray-500">
+                Price / unit (₹)
+              </label>
+              <InputNumber
+                value={prices[item._id] ?? null}
+                onValueChange={(e) =>
+                  setPrices((p) => ({ ...p, [item._id]: e.value ?? null }))
+                }
+                mode="decimal"
+                minFractionDigits={2}
+                maxFractionDigits={2}
+                min={0}
+                useGrouping={false}
+                className="w-full"
+                inputClassName="w-full p-inputtext-sm"
+              />
+            </div>
+            <div className="w-24 text-right text-sm font-semibold text-amber-800">
+              ₹{((prices[item._id] || 0) * item.quantity).toFixed(2)}
+            </div>
+          </div>
+        ))}
+
+        <InputTextarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={2}
+          maxLength={300}
+          className="w-full"
+          placeholder="Note for customer (optional)"
+        />
+
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+          <p className="text-sm text-gray-700">
+            Estimated total:{" "}
+            <b className="text-amber-800">₹{estimatedTotal.toFixed(2)}</b>
+          </p>
+          <Button
+            label={isQuoted ? "Update estimate" : "Send estimate to customer"}
+            icon="pi pi-send"
+            loading={submitting}
+            onClick={handleSubmit}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OrderDetailsPage() {
   const router = useRouter();
   const { orderId } = useParams<{ orderId: string }>();
@@ -306,6 +451,31 @@ function OrderDetailsPage() {
     }
   };
 
+  // price estimate pathano / update kora
+  const submitQuote = async (
+    items: { itemId: string; unitPrice: number }[],
+    note?: string,
+  ) => {
+    if (!order) return;
+    try {
+      setUpdating(true);
+      const res = await axiosInstance.patch(
+        `/api/order/store-orders/${order._id}/quote`,
+        { items, ...(note ? { note } : {}) },
+      );
+      toast.success(res.data.message || "Price estimate sent");
+      setOrder((prev) => (prev ? { ...prev, ...res.data.order } : prev));
+    } catch (err: any) {
+      toast.error(
+        err?.response?.data?.errors?.[0]?.message ||
+          err?.response?.data?.message ||
+          "Failed to send estimate",
+      );
+    } finally {
+      setUpdating(false);
+    }
+  };
+
   const closeCancelDialog = () => {
     setCancelDialogVisible(false);
     setCancelNote("");
@@ -408,7 +578,11 @@ function OrderDetailsPage() {
   }
 
   const isTerminal = TERMINAL_STATUSES.includes(order.status);
-  const nextStatuses = getNextStatuses(order.status);
+  // price estimate user accept na kora porjonto CONFIRMED kora jabe na
+  const quotePending = isQuotePending(order);
+  const nextStatuses = getNextStatuses(order.status).filter(
+    (s) => !(s === "CONFIRMED" && quotePending),
+  );
 
   const canEditDeliveryDate = ["PENDING", "CONFIRMED", "SHIPPED"].includes(
     order.status,
@@ -487,9 +661,34 @@ function OrderDetailsPage() {
           )}
         </div>
 
+        {quotePending && order.status === "PENDING" && (
+          <p className="text-xs text-amber-700">
+            Order can be confirmed only after the customer accepts your price
+            estimate.
+          </p>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
           {/* Left: Items */}
           <div className="lg:col-span-2 space-y-3">
+            {/* Price estimate panel */}
+            {order.status === "PENDING" && quotePending && (
+              <QuotePanel
+                key={order.quote?.quotedAt ?? `new-${order.priceHistory?.length ?? 0}`}
+                order={order}
+                submitting={updating}
+                onSubmit={submitQuote}
+              />
+            )}
+
+            {order.priceStatus === "CONFIRMED" && (
+              <div className="border border-green-200 bg-green-50 rounded-lg p-2.5 text-sm text-green-800">
+                <i className="pi pi-check-circle mr-1.5"></i>
+                Customer accepted the estimated price. Order total: ₹
+                {Number(order.totalAmount).toFixed(2)}
+              </div>
+            )}
+
             <div className="border border-blue-100 rounded-lg overflow-hidden">
               {/* Items header: Select all + Send selected */}
               <div className="bg-blue-50 px-3 py-2 text-sm flex flex-wrap items-center justify-between gap-2">
@@ -585,16 +784,31 @@ function OrderDetailsPage() {
                           {item.weight ? ` • ${item.weight}` : ""}
                         </p>
                         <p className="text-xs text-gray-600 mt-1">
-                          Qty: {item.quantity} × ₹{item.offerPrice.toFixed(2)}
-                          <span className="line-through text-gray-400 ml-2">
-                            ₹{item.mrp.toFixed(2)}
-                          </span>
+                          Qty: {item.quantity}
+                          {item.offerPrice != null && (
+                            <>
+                              {" "}
+                              × ₹{Number(item.offerPrice).toFixed(2)}
+                              {item.mrp != null &&
+                                item.mrp !== item.offerPrice && (
+                                  <span className="line-through text-gray-400 ml-2">
+                                    ₹{Number(item.mrp).toFixed(2)}
+                                  </span>
+                                )}
+                            </>
+                          )}
                         </p>
                       </div>
 
                       <div className="flex flex-col items-end justify-between self-stretch shrink-0">
                         <div className="text-sm font-semibold text-blue-700">
-                          ₹{item.lineTotal.toFixed(2)}
+                          {item.lineTotal != null ? (
+                            `₹${Number(item.lineTotal).toFixed(2)}`
+                          ) : (
+                            <span className="text-xs text-amber-600">
+                              Price pending
+                            </span>
+                          )}
                         </div>
                         {/* Single item share */}
                         <button
@@ -676,9 +890,39 @@ function OrderDetailsPage() {
                   </div>
                 </div>
               )}
+
+            {/* Price history */}
+            {order.priceHistory && order.priceHistory.length > 0 && (
+              <div className="border border-amber-100 rounded-lg p-3 text-sm">
+                <p className="font-semibold text-gray-700 mb-1.5">
+                  Price Estimate History
+                </p>
+                <div className="space-y-1">
+                  {order.priceHistory.map((h, i) => (
+                    <div
+                      key={i}
+                      className="flex justify-between gap-2 text-xs text-gray-600"
+                    >
+                      <span>
+                        <b>
+                          {h.action === "QUOTED"
+                            ? "You sent"
+                            : h.action === "ACCEPTED"
+                              ? "Customer accepted"
+                              : "Customer declined"}
+                        </b>
+                        {h.total != null ? ` ₹${Number(h.total).toFixed(2)}` : ""}
+                        {h.note ? ` — "${h.note}"` : ""}
+                      </span>
+                      <span className="shrink-0">{formatDate(h.at)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
-          <div className="border border-blue-100 rounded-lg p-3 text-sm">
+          <div className="border border-blue-100 rounded-lg p-3 text-sm self-start">
             <div className="flex items-center justify-between mb-1.5">
               <p className="font-semibold text-gray-700">Expected Delivery</p>
               {canEditDeliveryDate && (
