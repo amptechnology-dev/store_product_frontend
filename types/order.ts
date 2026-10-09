@@ -14,9 +14,34 @@ export type PriceStatus =
   | "QUOTED"
   | "CONFIRMED";
 
+// ---------- Payment ----------
+export type PaymentMethod = "COD" | "ONLINE";
+
+export type PaymentStatus =
+  | "PENDING"
+  | "INITIATED"
+  | "PAID"
+  | "FAILED"
+  | "REFUNDED";
+
+export type PaymentAttemptStatus = "INITIATED" | "SUCCESS" | "FAILED";
+
+export type PaymentAttempt = {
+  txnid: string;
+  amount: number;
+  status: PaymentAttemptStatus;
+  mihpayid?: string | null;
+  mode?: string | null;
+  bankRefNum?: string | null;
+  errorMessage?: string | null;
+  createdAt: string; // required
+  completedAt?: string | null;
+};
+
 export type OrderItem = {
   _id: string;
   productId: string;
+  variantId?: string | null;
   name: string;
   productCode?: string;
   image?: string | null;
@@ -69,8 +94,8 @@ export type PriceHistoryEntry = {
 export type OrderRow = {
   _id: string;
   orderNumber: string;
-  cartId?: string;
-  checkoutId?: string;
+  cartId?: string | null;
+  checkoutId?: string | null;
   userId: { _id: string; name: string; email: string; phone: string };
   storeId: string;
   storeName?: string;
@@ -83,8 +108,15 @@ export type OrderRow = {
   deliveryAddress: DeliveryAddress;
   note?: string | null;
   expectedDeliveryDate?: string | null;
-  paymentMethod: "COD";
-  paymentStatus: "PENDING" | "PAID";
+
+  // ---------- payment ----------
+  paymentMethod: PaymentMethod;
+  paymentStatus: PaymentStatus;
+  // purono order e field na-o thakte pare
+  paymentAttempts?: PaymentAttempt[];
+  paidAt?: string | null;
+  paymentExpiresAt?: string | null;
+
   status: OrderStatus;
   statusHistory?: StatusHistoryEntry[];
   // purono order e field na-o thakte pare (undefined = NOT_REQUIRED)
@@ -121,11 +153,34 @@ export const STATUS_ICONS: Record<OrderStatus, string> = {
   CANCELLED: "pi pi-times-circle",
 };
 
+// ---------- Payment UI helpers ----------
+export const PAYMENT_STATUS_STYLES: Record<PaymentStatus, string> = {
+  PENDING: "bg-amber-100 text-amber-800",
+  INITIATED: "bg-blue-100 text-blue-800",
+  PAID: "bg-green-100 text-green-800",
+  FAILED: "bg-red-100 text-red-700",
+  REFUNDED: "bg-purple-100 text-purple-800",
+};
+
+export const PAYMENT_STATUS_ICONS: Record<PaymentStatus, string> = {
+  PENDING: "pi pi-clock",
+  INITIATED: "pi pi-spinner",
+  PAID: "pi pi-check-circle",
+  FAILED: "pi pi-times-circle",
+  REFUNDED: "pi pi-replay",
+};
+
+export const ATTEMPT_STYLES: Record<PaymentAttemptStatus, string> = {
+  INITIATED: "bg-blue-100 text-blue-700",
+  SUCCESS: "bg-green-100 text-green-700",
+  FAILED: "bg-red-100 text-red-700",
+};
+
 export const TERMINAL_STATUSES: OrderStatus[] = ["DELIVERED", "CANCELLED"];
 
 /**
- * Backend er ALLOWED_FROM mirror — key: target status, value: allowed *current* statuses.
- * ⚠️ Backend controller er actual ALLOWED_FROM constant er sathe match kore niyo.
+ * Backend er ALLOWED_TRANSITIONS mirror — key: target status, value: allowed *current* statuses.
+ * ⚠️ Backend controller er ALLOWED_TRANSITIONS er sathe match kore niyo.
  */
 export const ALLOWED_FROM: Partial<Record<OrderStatus, OrderStatus[]>> = {
   CONFIRMED: ["PENDING"],
@@ -142,6 +197,12 @@ export const getNextStatuses = (current: OrderStatus): OrderStatus[] =>
 export const isQuotePending = (o: { priceStatus?: PriceStatus }) =>
   o.priceStatus === "AWAITING_QUOTE" || o.priceStatus === "QUOTED";
 
+/** ONLINE order e payment complete hoyni (CONFIRMED kora jabe na) */
+export const isPaymentPending = (o: {
+  paymentMethod?: PaymentMethod;
+  paymentStatus?: PaymentStatus;
+}) => o.paymentMethod === "ONLINE" && o.paymentStatus !== "PAID";
+
 /** PATCH /store-orders/:orderId/status */
 export const updateOrderStatusApi = (
   orderId: string,
@@ -152,6 +213,8 @@ export const updateOrderStatusApi = (
     status,
     ...(note ? { note } : {}),
   });
+
+  
 
 /** PATCH /store-orders/:orderId/quote */
 export const submitQuoteApi = (

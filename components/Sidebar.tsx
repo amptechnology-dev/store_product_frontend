@@ -143,7 +143,10 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
     {
       title: "Menu",
       items: [
+        // ---- shobar jonno ----
         { label: "Dashboard", icon: "pi-th-large", href: "/dashboard" },
+
+        // ---- sudhu ADMIN ----
         ...(role === "ADMIN"
           ? [
               {
@@ -161,8 +164,22 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
                 icon: "pi-mobile",
                 href: "/dashboard/app-releases",
               },
+              // [PAYMENT] ADMIN: kon store theke koto payment eseche
+              {
+                label: "Store Payments",
+                icon: "pi-wallet",
+                href: "/dashboard/payments",
+              },
+              // [PAYOUT] ADMIN: store ke taka dewa + history
+              {
+                label: "Store Payouts",
+                icon: "pi-send",
+                href: "/dashboard/payouts",
+              },
             ]
           : []),
+
+        // ---- sudhu STORE ----
         ...(role === "STORE"
           ? [
               {
@@ -200,7 +217,19 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
                 icon: "pi-shopping-cart",
                 href: "/dashboard/orders",
               },
-               {
+              // [PAYMENT] STORE: customer wise payment report
+              {
+                label: "Payments",
+                icon: "pi-wallet",
+                href: "/dashboard/payments",
+              },
+              // [PAYOUT] STORE: admin theke koto taka peyechi
+              {
+                label: "Settlements",
+                icon: "pi-money-bill",
+                href: "/dashboard/payouts",
+              },
+              {
                 label: "Customers",
                 icon: "pi-user",
                 href: "/dashboard/customers",
@@ -212,6 +241,8 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
               },
             ]
           : []),
+
+        // ---- shobar jonno ----
         { label: "Store", icon: "pi-shop", href: "/dashboard/store" },
       ],
     },

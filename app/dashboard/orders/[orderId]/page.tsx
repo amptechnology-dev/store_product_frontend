@@ -18,11 +18,16 @@ import { formatDate } from "@/helper/DateTime";
 import {
   OrderRow,
   OrderStatus,
+  PaymentStatus,
   STATUS_STYLES,
   STATUS_ICONS,
+  PAYMENT_STATUS_STYLES,
+  PAYMENT_STATUS_ICONS,
+  ATTEMPT_STYLES,
   TERMINAL_STATUSES,
   getNextStatuses,
   isQuotePending,
+  isPaymentPending,
   updateOrderStatusApi,
 } from "@/types/order";
 import DeliveryDateDialog, {
@@ -44,6 +49,12 @@ const getCancelReasonError = (value: string) => {
     return `Reason must be at least ${CANCEL_REASON_MIN} characters`;
   return "";
 };
+
+// ---------- Small helpers ----------
+const money = (n?: number | null) => `₹${Number(n ?? 0).toFixed(2)}`;
+
+// undefined / null date hole "-" dekhabe, formatDate crash korbe na
+const safeDate = (d?: string | null) => (d ? formatDate(d) : "-");
 
 type KarigarRow = {
   _id: string;
@@ -185,6 +196,198 @@ const buildShareMessage = (items: any[]) => {
     .map((item, idx) => [`Item ${idx + 1}`, ...buildItemLines(item)].join("\n"))
     .join("\n\n");
 };
+
+// ===============================================================
+// Payment status badge (header e use hoy)
+// ===============================================================
+function PaymentBadge({ status }: { status?: PaymentStatus }) {
+  if (!status) return null;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold ${PAYMENT_STATUS_STYLES[status]}`}
+    >
+      <i className={`${PAYMENT_STATUS_ICONS[status]} text-[10px]`}></i>
+      {status}
+    </span>
+  );
+}
+
+// ===============================================================
+// Price summary (Total MRP / Discount / Total)
+// ===============================================================
+function PriceSummary({ order }: { order: OrderRow }) {
+  const hasPending = (order.items || []).some(
+    (i) => i.priceOnRequest && i.lineTotal == null,
+  );
+
+  return (
+    <div className="border border-blue-100 rounded-lg p-3 text-sm">
+      <p className="font-semibold text-gray-700 mb-2">Price Summary</p>
+      <div className="space-y-1.5">
+        <div className="flex justify-between text-gray-600">
+          <span>Total MRP</span>
+          <span>{money(order.totalMrp)}</span>
+        </div>
+        <div className="flex justify-between text-green-700">
+          <span>Discount</span>
+          <span>- {money(order.discount)}</span>
+        </div>
+        <div className="flex justify-between border-t border-dashed border-gray-200 pt-2 mt-2 font-semibold text-blue-800 text-base">
+          <span>Total Amount</span>
+          <span>{money(order.totalAmount)}</span>
+        </div>
+      </div>
+      {hasPending && (
+        <p className="text-[11px] text-amber-600 mt-2">
+          Some items are waiting for price estimate, total excludes them.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ===============================================================
+// Payment card
+// ===============================================================
+function PaymentCard({ order }: { order: OrderRow }) {
+  const method = order.paymentMethod || "COD";
+  const status: PaymentStatus = order.paymentStatus || "PENDING";
+  const attempts = [...(order.paymentAttempts || [])].reverse(); // latest first
+  const successAttempt = (order.paymentAttempts || []).find(
+    (a) => a.status === "SUCCESS",
+  );
+  const isOnline = method === "ONLINE";
+  const waitingForPayment =
+    isOnline && status !== "PAID" && order.status === "PENDING";
+
+  return (
+    <div className="border border-blue-100 rounded-lg overflow-hidden text-sm">
+      <div className="bg-blue-50 px-3 py-2 flex items-center justify-between gap-2">
+        <p className="font-semibold text-blue-800">
+          <i className="pi pi-wallet mr-1.5"></i>
+          Payment
+        </p>
+        <PaymentBadge status={status} />
+      </div>
+
+      <div className="p-3 space-y-2">
+        <div className="flex justify-between">
+          <span className="text-gray-500">Method</span>
+          <span className="font-medium text-gray-800">
+            {isOnline ? "Online (PayU)" : "Cash on Delivery"}
+          </span>
+        </div>
+
+        <div className="flex justify-between">
+          <span className="text-gray-500">Amount</span>
+          <span className="font-semibold text-gray-800">
+            {money(order.totalAmount)}
+          </span>
+        </div>
+
+        {/* COD */}
+        {!isOnline && status !== "PAID" && (
+          <p className="text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-md p-2">
+            Collect {money(order.totalAmount)} from the customer at delivery.
+            Payment will be marked as PAID when you mark the order Delivered.
+          </p>
+        )}
+
+        {/* PAID details */}
+        {status === "PAID" && (
+          <div className="space-y-1.5 border-t border-gray-100 pt-2">
+            {order.paidAt && (
+              <div className="flex justify-between">
+                <span className="text-gray-500">Paid on</span>
+                <span className="text-gray-800">{safeDate(order.paidAt)}</span>
+              </div>
+            )}
+            {isOnline && successAttempt?.mode && (
+              <div className="flex justify-between">
+                <span className="text-gray-500">Mode</span>
+                <span className="text-gray-800">{successAttempt.mode}</span>
+              </div>
+            )}
+            {isOnline && successAttempt?.mihpayid && (
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-500 shrink-0">PayU ID</span>
+                <span className="text-gray-800 break-all text-right">
+                  {successAttempt.mihpayid}
+                </span>
+              </div>
+            )}
+            {isOnline && successAttempt?.bankRefNum && (
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-500 shrink-0">Bank Ref</span>
+                <span className="text-gray-800 break-all text-right">
+                  {successAttempt.bankRefNum}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Online, still unpaid */}
+        {waitingForPayment && (
+          <div className="text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-md p-2">
+            <i className="pi pi-info-circle mr-1"></i>
+            {status === "FAILED"
+              ? "Last payment attempt failed. Customer can retry"
+              : "Waiting for the customer to complete payment"}
+            {order.paymentExpiresAt
+              ? ` until ${safeDate(order.paymentExpiresAt)}.`
+              : "."}{" "}
+            You can confirm this order only after payment is received.
+          </div>
+        )}
+
+        {status === "REFUNDED" && (
+          <p className="text-xs text-purple-700 bg-purple-50 border border-purple-200 rounded-md p-2">
+            This payment has been refunded.
+          </p>
+        )}
+
+        {/* Attempt history */}
+        {isOnline && attempts.length > 0 && (
+          <div className="border-t border-gray-100 pt-2">
+            <p className="text-xs font-semibold text-gray-600 mb-1.5">
+              Payment attempts ({attempts.length})
+            </p>
+            <div className="space-y-1.5">
+              {attempts.map((a) => (
+                <div
+                  key={a.txnid}
+                  className="border border-gray-100 rounded-md p-2 text-xs"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span
+                      className={`px-2 py-0.5 rounded-full font-semibold ${ATTEMPT_STYLES[a.status]}`}
+                    >
+                      {a.status}
+                    </span>
+                    <span className="text-gray-500">
+                      {safeDate(a.completedAt || a.createdAt)}
+                    </span>
+                  </div>
+                  <p className="text-gray-500 mt-1 break-all">
+                    Txn: {a.txnid}
+                  </p>
+                  <p className="text-gray-700">
+                    {money(a.amount)}
+                    {a.mode ? ` • ${a.mode}` : ""}
+                  </p>
+                  {a.errorMessage && (
+                    <p className="text-red-600 mt-0.5">{a.errorMessage}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // ===============================================================
 // Price estimate panel (price on request item gulor jonno)
@@ -348,7 +551,7 @@ function OrderDetailsPage() {
   // ---- Multi-select state ----
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  // ---- Karigar share modal state (ekhon multiple items support kore) ----
+  // ---- Karigar share modal state (multiple items support kore) ----
   const [shareModal, setShareModal] = useState<{
     visible: boolean;
     items: any[];
@@ -578,15 +781,22 @@ function OrderDetailsPage() {
   }
 
   const isTerminal = TERMINAL_STATUSES.includes(order.status);
+
   // price estimate user accept na kora porjonto CONFIRMED kora jabe na
   const quotePending = isQuotePending(order);
+
+  // ONLINE order e payment PAID na hole CONFIRMED kora jabe na (backend o block kore)
+  const paymentPending = isPaymentPending(order);
+
   const nextStatuses = getNextStatuses(order.status).filter(
-    (s) => !(s === "CONFIRMED" && quotePending),
+    (s) => !(s === "CONFIRMED" && (quotePending || paymentPending)),
   );
 
   const canEditDeliveryDate = ["PENDING", "CONFIRMED", "SHIPPED"].includes(
     order.status,
   );
+
+  const isPaid = order.paymentStatus === "PAID";
 
   return (
     <div className="w-full flex justify-start items-start pt-2">
@@ -624,11 +834,17 @@ function OrderDetailsPage() {
             </div>
           </div>
 
-          <span
-            className={`px-3 py-1 rounded-full text-xs font-semibold self-start sm:self-auto ${STATUS_STYLES[order.status]}`}
-          >
-            {order.status}
-          </span>
+          <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+            <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/20 text-white">
+              {order.paymentMethod === "ONLINE" ? "ONLINE" : "COD"}
+            </span>
+            <PaymentBadge status={order.paymentStatus} />
+            <span
+              className={`px-3 py-1 rounded-full text-xs font-semibold ${STATUS_STYLES[order.status]}`}
+            >
+              {order.status}
+            </span>
+          </div>
         </div>
 
         {/* Status action buttons */}
@@ -668,13 +884,24 @@ function OrderDetailsPage() {
           </p>
         )}
 
+        {!quotePending && paymentPending && order.status === "PENDING" && (
+          <p className="text-xs text-amber-700">
+            <i className="pi pi-lock mr-1"></i>
+            This is an online payment order. It can be confirmed only after the
+            customer completes the payment.
+          </p>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
           {/* Left: Items */}
           <div className="lg:col-span-2 space-y-3">
             {/* Price estimate panel */}
             {order.status === "PENDING" && quotePending && (
               <QuotePanel
-                key={order.quote?.quotedAt ?? `new-${order.priceHistory?.length ?? 0}`}
+                key={
+                  order.quote?.quotedAt ??
+                  `new-${order.priceHistory?.length ?? 0}`
+                }
                 order={order}
                 submitting={updating}
                 onSubmit={submitQuote}
@@ -863,33 +1090,38 @@ function OrderDetailsPage() {
                 <p className="text-xs text-red-400 mt-1">
                   Cancelled by: {order.cancelledBy}
                 </p>
+                {order.paymentMethod === "ONLINE" && isPaid && (
+                  <p className="text-xs text-red-600 mt-1.5 font-medium">
+                    Customer had already paid {money(order.totalAmount)}. Refund
+                    must be processed manually.
+                  </p>
+                )}
               </div>
             )}
 
             {/* Status history */}
-            {order.statusHistory &&
-              (order as any).statusHistory?.length > 0 && (
-                <div className="border border-blue-100 rounded-lg p-3 text-sm">
-                  <p className="font-semibold text-gray-700 mb-1.5">
-                    Status History
-                  </p>
-                  <div className="space-y-1">
-                    {(order as any).statusHistory.map((h: any, i: number) => (
-                      <div
-                        key={i}
-                        className="flex justify-between text-xs text-gray-600"
+            {order.statusHistory && order.statusHistory.length > 0 && (
+              <div className="border border-blue-100 rounded-lg p-3 text-sm">
+                <p className="font-semibold text-gray-700 mb-1.5">
+                  Status History
+                </p>
+                <div className="space-y-1">
+                  {order.statusHistory.map((h, i) => (
+                    <div
+                      key={i}
+                      className="flex justify-between text-xs text-gray-600"
+                    >
+                      <span
+                        className={`px-2 py-0.5 rounded-full ${STATUS_STYLES[h.status]}`}
                       >
-                        <span
-                          className={`px-2 py-0.5 rounded-full ${STATUS_STYLES[h.status as OrderStatus]}`}
-                        >
-                          {h.status}
-                        </span>
-                        <span>{formatDate(h.at)}</span>
-                      </div>
-                    ))}
-                  </div>
+                        {h.status}
+                      </span>
+                      <span>{safeDate(h.at)}</span>
+                    </div>
+                  ))}
                 </div>
-              )}
+              </div>
+            )}
 
             {/* Price history */}
             {order.priceHistory && order.priceHistory.length > 0 && (
@@ -911,10 +1143,12 @@ function OrderDetailsPage() {
                               ? "Customer accepted"
                               : "Customer declined"}
                         </b>
-                        {h.total != null ? ` ₹${Number(h.total).toFixed(2)}` : ""}
+                        {h.total != null
+                          ? ` ₹${Number(h.total).toFixed(2)}`
+                          : ""}
                         {h.note ? ` — "${h.note}"` : ""}
                       </span>
-                      <span className="shrink-0">{formatDate(h.at)}</span>
+                      <span className="shrink-0">{safeDate(h.at)}</span>
                     </div>
                   ))}
                 </div>
@@ -922,34 +1156,43 @@ function OrderDetailsPage() {
             )}
           </div>
 
-          <div className="border border-blue-100 rounded-lg p-3 text-sm self-start">
-            <div className="flex items-center justify-between mb-1.5">
-              <p className="font-semibold text-gray-700">Expected Delivery</p>
-              {canEditDeliveryDate && (
-                <Button
-                  label={order.expectedDeliveryDate ? "Edit" : "Set date"}
-                  icon="pi pi-calendar"
-                  size="small"
-                  text
-                  onClick={() => setDateDialog({ visible: true, mode: "edit" })}
-                />
+          {/* Right column: summary + payment + delivery */}
+          <div className="space-y-3 self-start">
+            <PriceSummary order={order} />
+
+            <PaymentCard order={order} />
+
+            <div className="border border-blue-100 rounded-lg p-3 text-sm">
+              <div className="flex items-center justify-between mb-1.5">
+                <p className="font-semibold text-gray-700">Expected Delivery</p>
+                {canEditDeliveryDate && (
+                  <Button
+                    label={order.expectedDeliveryDate ? "Edit" : "Set date"}
+                    icon="pi pi-calendar"
+                    size="small"
+                    text
+                    onClick={() =>
+                      setDateDialog({ visible: true, mode: "edit" })
+                    }
+                  />
+                )}
+              </div>
+              <p
+                className={
+                  order.expectedDeliveryDate
+                    ? "text-gray-800 font-medium"
+                    : "text-gray-400"
+                }
+              >
+                <i className="pi pi-truck mr-1.5"></i>
+                {formatDeliveryDate(order.expectedDeliveryDate)}
+              </p>
+              {!order.expectedDeliveryDate && canEditDeliveryDate && (
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Required before marking as Shipped
+                </p>
               )}
             </div>
-            <p
-              className={
-                order.expectedDeliveryDate
-                  ? "text-gray-800 font-medium"
-                  : "text-gray-400"
-              }
-            >
-              <i className="pi pi-truck mr-1.5"></i>
-              {formatDeliveryDate(order.expectedDeliveryDate)}
-            </p>
-            {!order.expectedDeliveryDate && canEditDeliveryDate && (
-              <p className="text-[11px] text-gray-400 mt-1">
-                Required before marking as Shipped
-              </p>
-            )}
           </div>
         </div>
 
@@ -961,6 +1204,16 @@ function OrderDetailsPage() {
           breakpoints={{ "641px": "95vw" }}
           onHide={closeCancelDialog}
         >
+          {isPaid && (
+            <div className="mb-3 text-xs bg-red-50 border border-red-200 text-red-700 rounded-md p-2.5">
+              <i className="pi pi-exclamation-triangle mr-1"></i>
+              The customer has already paid {money(order.totalAmount)}
+              {order.paymentMethod === "ONLINE" ? " online" : ""}. Cancelling
+              will not refund automatically, you must refund the customer
+              manually.
+            </div>
+          )}
+
           <label className="text-sm font-semibold text-gray-700 block mb-2">
             Cancellation reason <span className="text-red-500">*</span>
           </label>
