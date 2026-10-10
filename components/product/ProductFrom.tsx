@@ -125,6 +125,28 @@ const hasPackaging = (p: any) => !!p && Object.values(p).some((x) => !isNil(x));
 const packagingOf = (own: any, fallback: any) =>
   hasPackaging(own) ? own : fallback || {};
 
+// ---------- [GST] ----------
+const GST_KEYS = ["cgst", "sgst", "igst"] as const;
+
+// khali hole undefined (key bad jabe)
+const cleanGst = (g: any) => {
+  const out: Record<string, number> = {};
+  GST_KEYS.forEach((k) => {
+    if (!isNil(g?.[k])) out[k] = Number(g[k]);
+  });
+  return Object.keys(out).length ? out : undefined;
+};
+
+const validateGstFields = (label: string, g: any): string | null => {
+  for (const k of GST_KEYS) {
+    if (isNil(g?.[k])) continue;
+    const n = Number(g[k]);
+    if (!Number.isFinite(n) || n < 0 || n > 100)
+      return `${label}${k.toUpperCase()} must be between 0 and 100`;
+  }
+  return null;
+};
+
 const genUiKey = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
@@ -207,6 +229,7 @@ const buildEmptySizeVariant = (d: Defaults = {}) => ({
   sku: d.sku ?? "",
   packagingDetails: {} as PackagingDetails,
   priceTiers: [] as any[],
+  gst: {} as any, // [GST]
 });
 
 const buildEmptyColorVariant = (withSize = false, d: Defaults = {}) => ({
@@ -219,6 +242,7 @@ const buildEmptyColorVariant = (withSize = false, d: Defaults = {}) => ({
   sku: d.sku ?? "",
   packagingDetails: {} as PackagingDetails,
   priceTiers: [] as any[],
+  gst: {} as any, // [GST]
   sizeVariants: (withSize ? [buildEmptySizeVariant(d)] : []) as ReturnType<
     typeof buildEmptySizeVariant
   >[],
@@ -362,6 +386,96 @@ function PackagingFieldsBlock({
               />
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ===============================================================
+// [GST] CGST / SGST / IGST percentage (optional)
+// Khali rakhle parent (size -> color -> product) er GST inherit hobe
+// ===============================================================
+function GstFieldsBlock({
+  control,
+  basePath,
+  title = "GST (optional)",
+  hint,
+}: {
+  control: Control<any>;
+  basePath: string;
+  title?: string;
+  hint?: string;
+}) {
+  const value = useWatch({ control, name: basePath as any });
+
+  const hasValue = (v: any) =>
+    !!v &&
+    Object.values(v).some((x) => x !== undefined && x !== null && x !== "");
+
+  const [open, setOpen] = useState(() => hasValue(value));
+
+  useEffect(() => {
+    if (hasValue(value)) setOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
+  const fieldsMeta = [
+    { name: "cgst", label: "CGST %" },
+    { name: "sgst", label: "SGST %" },
+    { name: "igst", label: "IGST %" },
+  ];
+
+  return (
+    <div className="mt-1.5 border border-dashed border-green-200 rounded-lg bg-white">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs font-semibold text-green-700"
+      >
+        <span className="flex items-center gap-1.5">
+          <i className="pi pi-percentage text-green-600"></i>
+          {title}
+        </span>
+        <i
+          className={`pi ${open ? "pi-chevron-up" : "pi-chevron-down"} text-[10px]`}
+        ></i>
+      </button>
+      {open && (
+        <div className="p-2 pt-0 space-y-1.5">
+          <div className="grid grid-cols-3 gap-2">
+            {fieldsMeta.map((f) => (
+              <div key={f.name} className="space-y-1 min-w-0">
+                <label className="text-[10px] font-medium text-gray-500">
+                  {f.label}
+                </label>
+                <Controller
+                  name={`${basePath}.${f.name}` as any}
+                  control={control}
+                  render={({ field }) => (
+                    <InputNumber
+                      value={field.value ?? null}
+                      onValueChange={(e) => field.onChange(e.value)}
+                      className="w-full"
+                      inputClassName="w-full text-xs p-1.5"
+                      min={0}
+                      max={100}
+                      mode="decimal"
+                      minFractionDigits={0}
+                      maxFractionDigits={2}
+                      suffix="%"
+                      useGrouping={false}
+                      placeholder="—"
+                    />
+                  )}
+                />
+              </div>
+            ))}
+          </div>
+          <p className="text-[10px] text-gray-400">
+            {hint ||
+              "Same state e CGST + SGST, onno state e IGST lagbe. Khali rakhle parent er GST ba no GST."}
+          </p>
         </div>
       )}
     </div>
@@ -689,6 +803,13 @@ function SizeVariantRow({
         </div>
       </div>
       <PriceTiersBlock control={control} name={`${basePath}.priceTiers`} />
+      {/* [GST] size level override */}
+      <GstFieldsBlock
+        control={control}
+        basePath={`${basePath}.gst`}
+        title="GST override (optional)"
+        hint="Khali rakhle color / product er GST use hobe."
+      />
       <PackagingFieldsBlock
         control={control}
         basePath={`${basePath}.packagingDetails`}
@@ -823,6 +944,20 @@ function ColorVariantBlock({
         <InputSwitch
           checked={sizeMode}
           onChange={(e) => toggleSizeMode(!!e.value)}
+        />
+      </div>
+
+      {/* [GST] color level GST (size on/off duitai te kaj kore, size row e override kora jay) */}
+      <div className="mb-2">
+        <GstFieldsBlock
+          control={control}
+          basePath={`variants.${colorIndex}.gst`}
+          title="GST for this color (optional)"
+          hint={
+            sizeMode
+              ? "Ei color er size option gulor default GST. Kono size e alada dite chaile oi size er GST override use koro."
+              : "Khali rakhle product er GST use hobe."
+          }
         />
       </div>
 
@@ -1024,6 +1159,8 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
       lowStockThreshold: 0,
       packagingDetails: {},
       priceTiers: [],
+      gst: {}, // [GST]
+      gstInclusive: false, // [GST]
       variants: [],
     },
   });
@@ -1429,6 +1566,9 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
       setValue("description", product.description || "");
       setValue("unit", product.unit || "");
       setValue("packagingDetails", product.packagingDetails || {});
+      // [GST] product level GST + inclusive flag
+      setValue("gst" as any, (product.gst || {}) as any);
+      setValue("gstInclusive" as any, (product.gstInclusive === true) as any);
 
       // [STOCK] edit mode e product er nijer flag dekhe stock field show/hide
       setStockEnabled(product.hasStockManagement !== false);
@@ -1484,6 +1624,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
               sku: v.sku || "",
               packagingDetails: v.packagingDetails || {},
               priceTiers: v.priceTiers || [],
+              gst: v.gst || {}, // [GST]
               sizeVariants: isSized(v)
                 ? v.sizeVariants.map((sv: any) => ({
                     size: sv.size || "",
@@ -1496,6 +1637,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
                     sku: sv.sku || "",
                     packagingDetails: sv.packagingDetails || {},
                     priceTiers: sv.priceTiers || [],
+                    gst: sv.gst || {}, // [GST]
                   }))
                 : [],
             })) as any,
@@ -1525,6 +1667,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
               sku: v.sku || "",
               packagingDetails: v.packagingDetails || {},
               priceTiers: v.priceTiers || [],
+              gst: v.gst || {}, // [GST]
             })),
           );
         }
@@ -1593,7 +1736,8 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
       return `${label}enter at least one of Size, Weight or Height`;
     return (
       priceError(label, sv.mrp, sv.offerPrice) ||
-      validateTiers(label, sv.priceTiers, sv.mrp)
+      validateTiers(label, sv.priceTiers, sv.mrp) ||
+      validateGstFields(label, sv.gst) // [GST]
     );
   };
 
@@ -1601,6 +1745,10 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
     // validate the real form values (not zod-parsed data)
     const values = getValues();
     const variants = (values.variants || []) as any[];
+
+    // ---- [GST] product level ----
+    const topGstErr = validateGstFields("", (values as any).gst);
+    if (topGstErr) return topGstErr;
 
     // ---- Media ----
     if (!hasColor && existingImages.length + imageFiles.length === 0) {
@@ -1640,6 +1788,10 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
         const imgs = getColorImageState(getUiKey(variantFields[i]));
         if (imgs.existing.length + imgs.files.length === 0)
           return `${label}at least one image or video is required`;
+
+        // [GST] color level GST (size on/off duitai te)
+        const colorGstErr = validateGstFields(label, v.gst);
+        if (colorGstErr) return colorGstErr;
 
         const sizeRows = Array.isArray(v.sizeVariants) ? v.sizeVariants : [];
 
@@ -1696,6 +1848,16 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
       formData.append("description", data.description || "");
       formData.append("unit", data.unit || "");
       formData.append("hasColor", String(hasColor));
+
+      // [GST] product level
+      formData.append(
+        "gst",
+        JSON.stringify(cleanGst((getValues() as any).gst) ?? {}),
+      );
+      formData.append(
+        "gstInclusive",
+        String((getValues() as any).gstInclusive === true),
+      );
 
       if (!isEditMode && data.storeId)
         formData.append("storeId", String(data.storeId));
@@ -1765,6 +1927,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
               return {
                 color,
                 images: imgState.existing,
+                gst: cleanGst(v.gst), // [GST] color level (size row er default)
                 packagingDetails: packagingOf(
                   v.packagingDetails,
                   globalPackaging,
@@ -1778,6 +1941,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
                   ...stockOf(sv), // [STOCK]
                   sku: sv.sku || undefined,
                   priceTiers: cleanTiers(sv.priceTiers), // [TIER]
+                  gst: cleanGst(sv.gst), // [GST]
                   packagingDetails: packagingOf(
                     sv.packagingDetails,
                     globalPackaging,
@@ -1795,6 +1959,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
               ...stockOf(v), // [STOCK]
               sku: v.sku || undefined,
               priceTiers: cleanTiers(v.priceTiers), // [TIER]
+              gst: cleanGst(v.gst), // [GST]
               packagingDetails: packagingOf(
                 v.packagingDetails,
                 globalPackaging,
@@ -1812,6 +1977,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
             ...stockOf(v), // [STOCK]
             sku: v.sku || undefined,
             priceTiers: cleanTiers(v.priceTiers), // [TIER]
+            gst: cleanGst(v.gst), // [GST]
             packagingDetails: packagingOf(v.packagingDetails, globalPackaging),
           };
         });
@@ -2230,6 +2396,42 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
           {!hasVariants && (
             <PriceTiersBlock control={control} name="priceTiers" />
           )}
+
+          {/* [GST] product level (variant e override kora jay) */}
+          <GstFieldsBlock
+            control={control}
+            basePath="gst"
+            title={
+              hasVariants ? "GST (all variants, optional)" : "GST (optional)"
+            }
+            hint={
+              hasVariants
+                ? "Eta shob variant e lagbe. Kono color / size e alada GST dite chaile oi variant er GST override use koro."
+                : undefined
+            }
+          />
+
+          <div className="flex items-center justify-between border border-green-100 rounded-lg px-2.5 py-1.5 bg-green-50/40">
+            <div>
+              <p className="text-xs font-semibold text-gray-700">
+                Prices already include GST
+              </p>
+              <p className="text-[10px] text-gray-500">
+                On: GST price er bhetor theke ber hobe. Off: price er upor GST
+                jog hobe.
+              </p>
+            </div>
+            <Controller
+              name={"gstInclusive" as any}
+              control={control}
+              render={({ field }) => (
+                <InputSwitch
+                  checked={!!field.value}
+                  onChange={(e) => field.onChange(!!e.value)}
+                />
+              )}
+            />
+          </div>
 
           <PackagingFieldsBlock control={control} basePath="packagingDetails" />
         </div>

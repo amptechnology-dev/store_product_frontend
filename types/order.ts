@@ -39,6 +39,15 @@ export type PaymentAttempt = {
   completedAt?: string | null;
 };
 
+// ---------- GST ----------
+export type GstRates = {
+  cgst?: number | null;
+  sgst?: number | null;
+  igst?: number | null;
+};
+
+export type GstMode = "INTRA" | "INTER";
+
 export type OrderItem = {
   _id: string;
   productId: string;
@@ -57,6 +66,16 @@ export type OrderItem = {
   quantity: number;
   lineTotal: number | null;
   priceOnRequest?: boolean;
+
+  // [GST] purono order e field na-o thakte pare
+  gstRates?: GstRates | null;
+  gstInclusive?: boolean;
+  taxableAmount?: number | null;
+  cgstAmount?: number;
+  sgstAmount?: number;
+  igstAmount?: number;
+  gstAmount?: number;
+  lineTotalWithGst?: number | null;
 };
 
 export type DeliveryAddress = {
@@ -105,7 +124,18 @@ export type OrderRow = {
   totalItems: number;
   totalMrp: number;
   discount: number;
+  // totalAmount = payable (GST soho)
   totalAmount: number;
+
+  // [GST] purono order e field na-o thakte pare
+  gstMode?: GstMode;
+  subtotal?: number;
+  totalTaxable?: number;
+  totalCgst?: number;
+  totalSgst?: number;
+  totalIgst?: number;
+  totalGst?: number;
+
   deliveryAddress: DeliveryAddress;
   note?: string | null;
   expectedDeliveryDate?: string | null;
@@ -215,8 +245,6 @@ export const updateOrderStatusApi = (
     status,
     ...(note ? { note } : {}),
   });
-
-  
 
 /** PATCH /store-orders/:orderId/quote */
 export const submitQuoteApi = (

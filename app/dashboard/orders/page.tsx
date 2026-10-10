@@ -119,6 +119,10 @@ const deliveryCell = (row: OrderRow) => {
   return formatDeliveryDate(row.expectedDeliveryDate);
 };
 
+// [GST] totalAmount ekhon GST soho, tai MRP er cheye beshi hole strikethrough dekhabo na
+const showStrikeMrp = (o: OrderRow) =>
+  Number(o.totalMrp) > Number(o.totalAmount);
+
 function OrdersPage() {
   const router = useRouter();
   const { markAllRead } = useNotifications();
@@ -381,9 +385,17 @@ function OrdersPage() {
         <p className="font-semibold text-gray-800">
           ₹{Number(rowData.totalAmount).toFixed(2)}
         </p>
-        <p className="text-xs text-gray-400 line-through">
-          ₹{Number(rowData.totalMrp).toFixed(2)}
-        </p>
+        {/* [GST] totalAmount GST soho, tai MRP kom hole-i strikethrough */}
+        {showStrikeMrp(rowData) && (
+          <p className="text-xs text-gray-400 line-through">
+            ₹{Number(rowData.totalMrp).toFixed(2)}
+          </p>
+        )}
+        {Number(rowData.totalGst) > 0 && (
+          <p className="text-[11px] text-green-700">
+            incl. GST ₹{Number(rowData.totalGst).toFixed(2)}
+          </p>
+        )}
       </div>
     );
   };
@@ -583,12 +595,21 @@ function OrdersPage() {
                             <span className="text-sm font-semibold text-blue-700">
                               ₹{Number(order.totalAmount).toFixed(2)}
                             </span>
-                            <span className="text-xs text-gray-400 line-through">
-                              ₹{Number(order.totalMrp).toFixed(2)}
-                            </span>
+                            {/* [GST] totalAmount GST soho, tai MRP kom hole-i strikethrough */}
+                            {showStrikeMrp(order) && (
+                              <span className="text-xs text-gray-400 line-through">
+                                ₹{Number(order.totalMrp).toFixed(2)}
+                              </span>
+                            )}
                           </>
                         )}
                       </div>
+                      {!isQuotePending(order) &&
+                        Number(order.totalGst) > 0 && (
+                          <p className="text-[11px] text-green-700 text-right">
+                            incl. GST ₹{Number(order.totalGst).toFixed(2)}
+                          </p>
+                        )}
                     </div>
 
                     {nextStatuses.length > 0 && (

@@ -215,12 +215,19 @@ function PaymentBadge({ status }: { status?: PaymentStatus }) {
 }
 
 // ===============================================================
-// Price summary (Total MRP / Discount / Total)
+// Price summary (Total MRP / Discount / [GST] Subtotal / CGST / SGST / IGST / Total)
 // ===============================================================
 function PriceSummary({ order }: { order: OrderRow }) {
-  const hasPending = (order.items || []).some(
-    (i) => i.priceOnRequest && i.lineTotal == null,
-  );
+  const items = (order.items || []) as any[];
+  const hasPending = items.some((i) => i.priceOnRequest && i.lineTotal == null);
+  const anyInclusive = items.some((i) => i.gstInclusive);
+
+  const gstRows = [
+    { label: "CGST", value: order.totalCgst },
+    { label: "SGST", value: order.totalSgst },
+    { label: "IGST", value: order.totalIgst },
+  ].filter((r) => Number(r.value) > 0);
+  const hasGst = gstRows.length > 0;
 
   return (
     <div className="border border-blue-100 rounded-lg p-3 text-sm">
@@ -234,6 +241,31 @@ function PriceSummary({ order }: { order: OrderRow }) {
           <span>Discount</span>
           <span>- {money(order.discount)}</span>
         </div>
+
+        {/* [GST] */}
+        {hasGst && (
+          <>
+            <div className="flex justify-between text-gray-600 border-t border-dashed border-gray-200 pt-1.5">
+              <span>Subtotal</span>
+              <span>{money(order.subtotal)}</span>
+            </div>
+            {gstRows.map((r) => (
+              <div key={r.label} className="flex justify-between text-gray-600">
+                <span>{r.label}</span>
+                <span>
+                  {anyInclusive ? "" : "+ "}
+                  {money(r.value)}
+                </span>
+              </div>
+            ))}
+            {anyInclusive && (
+              <p className="text-[11px] text-gray-400">
+                GST amounts are already included in item prices.
+              </p>
+            )}
+          </>
+        )}
+
         <div className="flex justify-between border-t border-dashed border-gray-200 pt-2 mt-2 font-semibold text-blue-800 text-base">
           <span>Total Amount</span>
           <span>{money(order.totalAmount)}</span>
@@ -518,10 +550,16 @@ function QuotePanel({
         />
 
         <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-          <p className="text-sm text-gray-700">
-            Estimated total:{" "}
-            <b className="text-amber-800">₹{estimatedTotal.toFixed(2)}</b>
-          </p>
+          <div>
+            <p className="text-sm text-gray-700">
+              Estimated total (before GST):{" "}
+              <b className="text-amber-800">₹{estimatedTotal.toFixed(2)}</b>
+            </p>
+            {/* [GST] customer ke jei total dekhano hobe seta GST soho, backend calculate kore */}
+            <p className="text-[11px] text-gray-500">
+              Customer will see the final total with applicable GST.
+            </p>
+          </div>
           <Button
             label={isQuoted ? "Update estimate" : "Send estimate to customer"}
             icon="pi pi-send"
@@ -1030,12 +1068,20 @@ function OrderDetailsPage() {
                             </>
                           )}
                         </p>
+                        {/* [GST] */}
+                        {Number(item.gstAmount) > 0 && (
+                          <p className="text-[11px] text-green-700 mt-0.5">
+                            GST ₹{Number(item.gstAmount).toFixed(2)}
+                            {item.gstInclusive ? " (incl.)" : ""}
+                          </p>
+                        )}
                       </div>
 
                       <div className="flex flex-col items-end justify-between self-stretch shrink-0">
                         <div className="text-sm font-semibold text-blue-700">
-                          {item.lineTotal != null ? (
-                            `₹${Number(item.lineTotal).toFixed(2)}`
+                          {/* [GST] GST soho line total */}
+                          {(item.lineTotalWithGst ?? item.lineTotal) != null ? (
+                            `₹${Number(item.lineTotalWithGst ?? item.lineTotal).toFixed(2)}`
                           ) : (
                             <span className="text-xs text-amber-600">
                               Price pending

@@ -23,6 +23,28 @@ const optionalNumber = zod.preprocess(
   zod.coerce.number().nonnegative().optional(),
 );
 
+// ===============================
+// [GST] OPTIONAL PERCENT (0-100)
+// ===============================
+const optionalPercent = zod.preprocess(
+  (v) =>
+    v === "" ||
+    v === null ||
+    v === undefined ||
+    (typeof v === "number" && Number.isNaN(v))
+      ? undefined
+      : v,
+  zod.coerce.number().min(0, "Min 0").max(100, "Max 100").optional(),
+);
+
+export const gstSchema = zod
+  .object({
+    cgst: optionalPercent,
+    sgst: optionalPercent,
+    igst: optionalPercent,
+  })
+  .optional();
+
 export const LoginSchema = zod.object({
   email: zod
     .string()
@@ -97,6 +119,7 @@ export const sizeVariantSchema = zod.object({
   sku: zod.string().trim().optional(),
   packagingDetails: packagingDetailsSchema,
   priceTiers: zod.array(priceTierSchema).optional(),
+  gst: gstSchema, // [GST]
 });
 
 // ===============================
@@ -114,6 +137,7 @@ export const colorVariantSchema = zod.object({
   sku: zod.string().trim().optional(),
   packagingDetails: packagingDetailsSchema,
   priceTiers: zod.array(priceTierSchema).optional(),
+  gst: gstSchema, // [GST]
   sizeVariants: zod.array(sizeVariantSchema).optional(),
 });
 
@@ -131,6 +155,9 @@ export const createProductSchema = zod.object({
   lowStockThreshold: zod.coerce.number().min(0).optional(),
   packagingDetails: packagingDetailsSchema,
   priceTiers: zod.array(priceTierSchema).optional(),
+  // [GST]
+  gst: gstSchema,
+  gstInclusive: zod.boolean().optional(),
 
   // Loose union - real per-row validation component-e manually hoy
   variants: zod

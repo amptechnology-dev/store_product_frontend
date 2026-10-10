@@ -22,6 +22,9 @@ const DELETE_ENDPOINT = "/api/product/delete-product";
 // [TIER] quantity based price
 type PriceTier = { minQty: number; maxQty?: number | null; price: number };
 
+// [GST]
+type Gst = { cgst?: number | null; sgst?: number | null; igst?: number | null };
+
 type SizeVariant = {
   size?: string | null;
   weight?: string | null;
@@ -31,6 +34,7 @@ type SizeVariant = {
   currentStock?: number | null;
   lowStockThreshold?: number | null;
   priceTiers?: PriceTier[];
+  gst?: Gst | null; // [GST]
 };
 
 type Variant = SizeVariant & {
@@ -54,6 +58,8 @@ type ProductRow = {
   currentStock?: number | null;
   lowStockThreshold?: number | null;
   priceTiers?: PriceTier[];
+  gst?: Gst | null; // [GST]
+  gstInclusive?: boolean; // [GST]
   variants?: Variant[];
   hasVariants?: boolean;
   hasColor?: boolean;
@@ -74,6 +80,7 @@ type Unit = {
   currentStock: number;
   lowStockThreshold: number;
   tiers?: PriceTier[];
+  gst?: Gst | null; // [GST]
 };
 
 // ---------- Helpers ----------
@@ -118,6 +125,7 @@ const flattenUnits = (p: ProductRow): Unit[] => {
           currentStock: sv.currentStock ?? 0,
           lowStockThreshold: sv.lowStockThreshold ?? 0,
           tiers: sv.priceTiers,
+          gst: sv.gst ?? v.gst, // [GST] size -> color
         }),
       );
     } else {
@@ -128,6 +136,7 @@ const flattenUnits = (p: ProductRow): Unit[] => {
         currentStock: v.currentStock ?? 0,
         lowStockThreshold: v.lowStockThreshold ?? 0,
         tiers: v.priceTiers,
+        gst: v.gst, // [GST]
       });
     }
   });
@@ -182,6 +191,24 @@ const hasTiers = (p: ProductRow) =>
     (v) =>
       (v.priceTiers?.length ?? 0) > 0 ||
       (v.sizeVariants || []).some((s) => (s.priceTiers?.length ?? 0) > 0),
+  );
+
+// [GST] label: "CGST 9% + SGST 9%"
+const gstOf = (g?: Gst | null) =>
+  [
+    g?.cgst != null ? `CGST ${g.cgst}%` : null,
+    g?.sgst != null ? `SGST ${g.sgst}%` : null,
+    g?.igst != null ? `IGST ${g.igst}%` : null,
+  ]
+    .filter(Boolean)
+    .join(" + ");
+
+// [GST] kono level e GST ache kina
+const hasGst = (p: ProductRow) =>
+  !!gstOf(p.gst) ||
+  (p.variants || []).some(
+    (v) =>
+      !!gstOf(v.gst) || (v.sizeVariants || []).some((s) => !!gstOf(s.gst)),
   );
 
 const tierRangeLabel = (t: PriceTier) =>
@@ -421,6 +448,13 @@ function PreviewBody({
     { label: "Store", value: product.store?.storeName || "-" },
     { label: "Unit", value: product.unit || "-" },
     { label: "Price", value: <PriceBlock p={product} /> },
+    // [GST]
+    {
+      label: "GST",
+      value: gstOf(product.gst)
+        ? `${gstOf(product.gst)}${product.gstInclusive ? " (incl.)" : " (extra)"}`
+        : "-",
+    },
     { label: "Stock", value: <StockBadge p={product} /> },
     { label: "Status", value: <StatusBadges p={product} /> },
     { label: "Created", value: formatDate(product.createdAt || "") },
@@ -539,7 +573,15 @@ function PreviewBody({
                 {units.map((u, i) => (
                   <React.Fragment key={i}>
                     <tr className="border-t border-blue-50">
-                      <td className="px-3 py-2">{u.label}</td>
+                      <td className="px-3 py-2">
+                        {u.label}
+                        {/* [GST] variant er nijer / inherit kora (color) GST */}
+                        {gstOf(u.gst) && (
+                          <p className="text-[10px] text-green-700">
+                            {gstOf(u.gst)}
+                          </p>
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-gray-500">
                         {money(u.mrp)}
                       </td>
@@ -710,7 +752,8 @@ function Page() {
   const onPageChange = (e: { page?: number; rows: number }) =>
     setPagination({ page: (e.page ?? 0) + 1, rows: e.rows });
 
-  const rangeStart = totalProducts === 0 ? 0 : (pagination.page - 1) * pagination.rows + 1;
+  const rangeStart =
+    totalProducts === 0 ? 0 : (pagination.page - 1) * pagination.rows + 1;
   const rangeEnd = Math.min(pagination.page * pagination.rows, totalProducts);
 
   // ---------- Table templates ----------
@@ -750,9 +793,21 @@ function Page() {
     const bulk = hasTiers(row) ? (
       <Badge className="bg-purple-100 text-purple-800">Bulk</Badge>
     ) : null;
+    // [GST] badge
+    const gstBadge = hasGst(row) ? (
+      <Badge className="bg-green-100 text-green-800">GST</Badge>
+    ) : null;
 
-    if (!colors && !sizes)
-      return bulk || <span className="text-xs text-gray-400">Simple</span>;
+    if (!colors && !sizes) {
+      if (!bulk && !gstBadge)
+        return <span className="text-xs text-gray-400">Simple</span>;
+      return (
+        <div className="flex flex-wrap gap-1">
+          {bulk}
+          {gstBadge}
+        </div>
+      );
+    }
     return (
       <div className="flex flex-wrap gap-1">
         {colors > 0 && (
@@ -766,6 +821,7 @@ function Page() {
           </Badge>
         )}
         {bulk}
+        {gstBadge}
       </div>
     );
   };
@@ -927,7 +983,13 @@ function Page() {
     </div>
   );
 
-  const FormHeader = ({ title, subtitle }: { title: string; subtitle: string }) => (
+  const FormHeader = ({
+    title,
+    subtitle,
+  }: {
+    title: string;
+    subtitle: string;
+  }) => (
     <div className="flex items-center gap-3 bg-gradient-to-r from-blue-500 to-blue-600 mb-2 p-3 rounded-t-lg">
       <div className="bg-white/20 backdrop-blur-sm p-2 rounded-lg">
         <i className="pi pi-box text-white text-xl"></i>
@@ -1040,6 +1102,12 @@ function Page() {
                             Bulk pricing
                           </Badge>
                         )}
+                        {/* [GST] */}
+                        {hasGst(p) && (
+                          <Badge className="bg-green-100 text-green-800">
+                            GST{p.gstInclusive ? " incl." : ""}
+                          </Badge>
+                        )}
                         {p.hasStockManagement && <StockBadge p={p} />}
                       </div>
 
@@ -1126,10 +1194,19 @@ function Page() {
               header="Store"
               body={(row: ProductRow) => row.store?.storeName || "-"}
             />
-            <Column header="Price" body={(row: ProductRow) => <PriceBlock p={row} />} />
+            <Column
+              header="Price"
+              body={(row: ProductRow) => <PriceBlock p={row} />}
+            />
             <Column header="Variants" body={variantsCell} />
-            <Column header="Stock" body={(row: ProductRow) => <StockBadge p={row} />} />
-            <Column header="Status" body={(row: ProductRow) => <StatusBadges p={row} />} />
+            <Column
+              header="Stock"
+              body={(row: ProductRow) => <StockBadge p={row} />}
+            />
+            <Column
+              header="Status"
+              body={(row: ProductRow) => <StatusBadges p={row} />}
+            />
             <Column
               header="Created"
               body={(row: ProductRow) => formatDate(row.createdAt || "")}
