@@ -30,6 +30,8 @@ import { useNotifications } from "@/lib/NotificationContext";
 import DeliveryDateDialog, {
   formatDeliveryDate,
 } from "@/components/orders/DeliveryDateDialog";
+// [DELIVERY] order place er somoy er estimate dekhano
+import { formatEstimateRange } from "@/helper/delivery";
 
 const ENDPOINT = "/api/order/store-orders";
 
@@ -98,6 +100,24 @@ const DELIVERY_DATE_EDITABLE: OrderStatus[] = [
   "CONFIRMED",
   "SHIPPED",
 ];
+
+// [DELIVERY] store date set kora thakle seta, nahole order er somoy dekhano estimate
+const deliveryCell = (row: OrderRow) => {
+  if (row.expectedDeliveryDate) {
+    return formatDeliveryDate(row.expectedDeliveryDate);
+  }
+  if (
+    DELIVERY_DATE_EDITABLE.includes(row.status) &&
+    row.deliveryInfo?.estimatedMinDate
+  ) {
+    return (
+      <span className="text-xs text-gray-500">
+        Est. {formatEstimateRange(row.deliveryInfo)}
+      </span>
+    );
+  }
+  return formatDeliveryDate(row.expectedDeliveryDate);
+};
 
 function OrdersPage() {
   const router = useRouter();
@@ -544,7 +564,7 @@ function OrdersPage() {
                         </p>
                         <p>
                           <span className="font-medium">🚚 Delivery:</span>{" "}
-                          {formatDeliveryDate(order.expectedDeliveryDate)}
+                          {deliveryCell(order)}
                         </p>
                       </div>
 
@@ -675,9 +695,7 @@ function OrdersPage() {
             <Column header="Status" body={statusTemplate} />
             <Column
               header="Delivery"
-              body={(row: OrderRow) =>
-                formatDeliveryDate(row.expectedDeliveryDate)
-              }
+              body={(row: OrderRow) => deliveryCell(row)}
             />
             <Column
               header="Placed On"
@@ -755,7 +773,11 @@ function OrdersPage() {
           }
           confirmLabel={dateDialog.mode === "ship" ? "Ship Order" : "Save Date"}
           loading={updatingId === dateDialog.order?._id}
-          initialDate={dateDialog.order?.expectedDeliveryDate}
+          // [DELIVERY] date set kora na thakle customer ke dekhano estimate er shesh date prefill
+          initialDate={
+            dateDialog.order?.expectedDeliveryDate ??
+            dateDialog.order?.deliveryInfo?.estimatedMaxDate
+          }
           onHide={closeDateDialog}
           onConfirm={confirmDeliveryDate}
         />

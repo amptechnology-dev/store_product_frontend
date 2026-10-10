@@ -33,6 +33,8 @@ import {
 import DeliveryDateDialog, {
   formatDeliveryDate,
 } from "@/components/orders/DeliveryDateDialog";
+// [DELIVERY] order place er somoy er estimate dekhano
+import { formatEstimateRange, formatDaysLabel } from "@/helper/delivery";
 
 const WORKER_ENDPOINT = "/api/worker/all-workers";
 
@@ -798,6 +800,9 @@ function OrderDetailsPage() {
 
   const isPaid = order.paymentStatus === "PAID";
 
+  // [DELIVERY] order place er somoy customer ke ja estimate dekhano hoyechilo
+  const deliveryInfo = order.deliveryInfo;
+
   return (
     <div className="w-full flex justify-start items-start pt-2">
       <div className="w-full bg-white rounded-lg shadow p-3 sm:p-4 space-y-3">
@@ -1192,6 +1197,30 @@ function OrderDetailsPage() {
                   Required before marking as Shipped
                 </p>
               )}
+
+              {/* [DELIVERY] order place er somoy customer ke ja dekhano hoyechilo */}
+              {deliveryInfo?.estimatedMinDate && (
+                <div className="mt-2.5 pt-2.5 border-t border-gray-100 text-xs space-y-0.5">
+                  <p className="font-semibold text-gray-700">
+                    Estimate shown to customer
+                  </p>
+                  <p className="text-blue-700 font-medium">
+                    {formatDaysLabel(deliveryInfo.minDays, deliveryInfo.maxDays)}
+                    {" • "}
+                    {formatEstimateRange(deliveryInfo)}
+                  </p>
+                  <p className="text-gray-500">
+                    {deliveryInfo.mode === "LOCAL"
+                      ? "Local delivery"
+                      : "Courier delivery"}
+                    {deliveryInfo.mode === "LOCAL" &&
+                    deliveryInfo.distanceKm !== null &&
+                    deliveryInfo.distanceKm !== undefined
+                      ? ` • about ${deliveryInfo.distanceKm} km from your store`
+                      : ""}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1352,7 +1381,10 @@ function OrderDetailsPage() {
           }
           confirmLabel={dateDialog.mode === "ship" ? "Ship Order" : "Save Date"}
           loading={updating}
-          initialDate={order.expectedDeliveryDate}
+          // [DELIVERY] date set kora na thakle customer ke dekhano estimate er shesh date prefill
+          initialDate={
+            order.expectedDeliveryDate ?? deliveryInfo?.estimatedMaxDate
+          }
           onHide={() => setDateDialog((d) => ({ ...d, visible: false }))}
           onConfirm={confirmDeliveryDate}
         />

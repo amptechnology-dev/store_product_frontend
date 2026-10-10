@@ -303,3 +303,121 @@ export const createPurchaseSchema = zod
       });
     }
   });
+
+// ===============================
+// DELIVERY SETTINGS (STORE)
+// null / "" / NaN -> undefined (InputNumber khali hole null dey, coerce(null) = 0 hoye jay)
+// ===============================
+const blankToUndefined = (v: unknown) =>
+  v === "" ||
+  v === null ||
+  v === undefined ||
+  (typeof v === "number" && Number.isNaN(v))
+    ? undefined
+    : v;
+
+export const deliveryTypeValues = ["LOCAL", "NATIONAL", "BOTH"] as const;
+
+export const deliverySettingsSchema = zod
+  .object({
+    storeId: zod.string().min(1, "Store is required"),
+    deliveryType: zod.enum(deliveryTypeValues),
+    pincode: zod
+      .string()
+      .trim()
+      .regex(/^[1-9][0-9]{5}$/, "Enter a valid 6 digit pincode"),
+    radiusKm: zod.preprocess(
+      blankToUndefined,
+      zod.coerce
+        .number()
+        .positive("Radius must be greater than 0")
+        .max(500, "Radius cannot exceed 500 km")
+        .optional(),
+    ),
+    localDeliveryDays: zod.preprocess(
+      blankToUndefined,
+      zod.coerce
+        .number()
+        .int("Enter whole days")
+        .min(0, "Days cannot be negative")
+        .max(30, "Maximum 30 days")
+        .optional(),
+    ),
+    nationalMinDays: zod.preprocess(
+      blankToUndefined,
+      zod.coerce
+        .number()
+        .int("Enter whole days")
+        .min(0, "Days cannot be negative")
+        .max(60, "Maximum 60 days")
+        .optional(),
+    ),
+    nationalMaxDays: zod.preprocess(
+      blankToUndefined,
+      zod.coerce
+        .number()
+        .int("Enter whole days")
+        .min(0, "Days cannot be negative")
+        .max(60, "Maximum 60 days")
+        .optional(),
+    ),
+    handlingDays: zod.preprocess(
+      blankToUndefined,
+      zod.coerce
+        .number()
+        .int("Enter whole days")
+        .min(0, "Days cannot be negative")
+        .max(30, "Maximum 30 days")
+        .optional(),
+    ),
+  })
+  .superRefine((d, ctx) => {
+    const needsLocal = d.deliveryType === "LOCAL" || d.deliveryType === "BOTH";
+    const needsNational =
+      d.deliveryType === "NATIONAL" || d.deliveryType === "BOTH";
+
+    if (needsLocal) {
+      if (d.radiusKm === undefined) {
+        ctx.addIssue({
+          code: zod.ZodIssueCode.custom,
+          path: ["radiusKm"],
+          message: "Delivery radius is required for local delivery",
+        });
+      }
+      if (d.localDeliveryDays === undefined) {
+        ctx.addIssue({
+          code: zod.ZodIssueCode.custom,
+          path: ["localDeliveryDays"],
+          message: "Local delivery days is required",
+        });
+      }
+    }
+
+    if (needsNational) {
+      if (d.nationalMinDays === undefined) {
+        ctx.addIssue({
+          code: zod.ZodIssueCode.custom,
+          path: ["nationalMinDays"],
+          message: "Minimum days is required",
+        });
+      }
+      if (d.nationalMaxDays === undefined) {
+        ctx.addIssue({
+          code: zod.ZodIssueCode.custom,
+          path: ["nationalMaxDays"],
+          message: "Maximum days is required",
+        });
+      }
+      if (
+        d.nationalMinDays !== undefined &&
+        d.nationalMaxDays !== undefined &&
+        d.nationalMaxDays < d.nationalMinDays
+      ) {
+        ctx.addIssue({
+          code: zod.ZodIssueCode.custom,
+          path: ["nationalMaxDays"],
+          message: "Max days cannot be less than min days",
+        });
+      }
+    }
+  });

@@ -217,6 +217,12 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
                 icon: "pi-shopping-cart",
                 href: "/dashboard/orders",
               },
+              // [DELIVERY] STORE: delivery area (pincode / radius) + delivery time
+              {
+                label: "Delivery",
+                icon: "pi-truck",
+                href: "/dashboard/delivery",
+              },
               // [PAYMENT] STORE: customer wise payment report
               {
                 label: "Payments",
