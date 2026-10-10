@@ -1,5 +1,5 @@
 import axiosInstance from "@/service/axios.service";
-import type { DeliveryInfo } from "@/helper/delivery";
+import type { DeliveryInfo, OrderShipment } from "@/helper/delivery";
 
 export type OrderStatus =
   | "PENDING"
@@ -140,6 +140,7 @@ export type OrderRow = {
   note?: string | null;
   expectedDeliveryDate?: string | null;
   deliveryInfo?: DeliveryInfo | null;
+  shipment?: OrderShipment | null;
 
   // ---------- payment ----------
   paymentMethod: PaymentMethod;

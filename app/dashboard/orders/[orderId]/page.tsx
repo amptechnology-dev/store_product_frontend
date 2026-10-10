@@ -35,6 +35,7 @@ import DeliveryDateDialog, {
 } from "@/components/orders/DeliveryDateDialog";
 // [DELIVERY] order place er somoy er estimate dekhano
 import { formatEstimateRange, formatDaysLabel } from "@/helper/delivery";
+import ShipmentCard from "@/components/orders/ShipmentCard";
 
 const WORKER_ENDPOINT = "/api/worker/all-workers";
 
@@ -1212,6 +1213,13 @@ function OrderDetailsPage() {
             <PriceSummary order={order} />
 
             <PaymentCard order={order} />
+
+            <ShipmentCard
+              order={order}
+              onUpdated={(o) =>
+                setOrder((prev) => (prev ? { ...prev, ...o } : prev))
+              }
+            />
 
             <div className="border border-blue-100 rounded-lg p-3 text-sm">
               <div className="flex items-center justify-between mb-1.5">

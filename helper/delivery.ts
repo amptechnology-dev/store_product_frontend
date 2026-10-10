@@ -6,6 +6,26 @@ export type DeliveryInfo = {
   maxDays: number;
   estimatedMinDate: string;
   estimatedMaxDate: string;
+  // [SHIPROCKET]
+  source?: "MANUAL" | "SHIPROCKET";
+  courierId?: number | null;
+  courierName?: string | null;
+  shippingCharge?: number | null;
+};
+
+// courier shipment (backend er order.shipment)
+export type OrderShipment = {
+  provider?: string;
+  shiprocketOrderId?: number | null;
+  shipmentId?: number | null;
+  awb?: string | null;
+  courierId?: number | null;
+  courierName?: string | null;
+  trackingUrl?: string | null;
+  status?: string | null;
+  pickupRequestedAt?: string | null;
+  lastEventAt?: string | null;
+  createdAt?: string | null;
 };
 
 // date gulo UTC midnight e save hoy (IST date), tai UTC te format
