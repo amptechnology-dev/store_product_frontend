@@ -310,21 +310,21 @@ export const createPurchaseSchema = zod
   .superRefine((data, ctx) => {
     if (data.paymentStatus === "DUE" && data.paidAmount !== 0) {
       ctx.addIssue({
-        code: zod.ZodIssueCode.custom,
+        code: "custom",
         message: "For DUE status, paidAmount must be 0",
         path: ["paidAmount"],
       });
     }
     if (data.paymentStatus === "PARTIAL" && data.paidAmount === 0) {
       ctx.addIssue({
-        code: zod.ZodIssueCode.custom,
+        code: "custom",
         message: "For PARTIAL status, paidAmount must be greater than 0",
         path: ["paidAmount"],
       });
     }
     if (data.paymentStatus === "PAID" && data.paidAmount === 0) {
       ctx.addIssue({
-        code: zod.ZodIssueCode.custom,
+        code: "custom",
         message: "For PAID status, paidAmount must be greater than 0",
         path: ["paidAmount"],
       });
@@ -344,6 +344,73 @@ const blankToUndefined = (v: unknown) =>
     : v;
 
 export const deliveryTypeValues = ["LOCAL", "NATIONAL", "BOTH"] as const;
+export const durationUnitValues = ["MINUTES", "HOURS", "DAYS"] as const;
+
+// jegulo khali rakhle error dibe (required number)
+const requiredNumber = (message: string) =>
+  zod.preprocess(blankToUndefined, zod.coerce.number({ error: message }));
+
+const slabItemSchema = zod.object({
+  upToKm: zod.preprocess(
+    blankToUndefined,
+    zod.coerce
+      .number({ error: "Enter distance" })
+      .positive("Must be more than 0")
+      .max(500, "Max 500 km"),
+  ),
+  charge: zod.preprocess(
+    blankToUndefined,
+    zod.coerce
+      .number({ error: "Enter charge" })
+      .min(0, "Cannot be negative")
+      .max(100000, "Too high"),
+  ),
+  etaValue: zod.preprocess(
+    blankToUndefined,
+    zod.coerce
+      .number({ error: "Enter time" })
+      .min(0, "Cannot be negative")
+      .max(100000, "Too high"),
+  ),
+  etaUnit: zod.enum(durationUnitValues),
+});
+
+const ruleItemSchema = zod.object({
+  minOrderValue: zod.preprocess(
+    blankToUndefined,
+    zod.coerce
+      .number({ error: "Enter order value" })
+      .min(0, "Cannot be negative")
+      .max(10000000, "Too high"),
+  ),
+  charge: zod.preprocess(
+    blankToUndefined,
+    zod.coerce
+      .number({ error: "Enter charge" })
+      .min(0, "Cannot be negative")
+      .max(100000, "Too high"),
+  ),
+});
+
+const optionalDays = (max: number) =>
+  zod.preprocess(
+    blankToUndefined,
+    zod.coerce
+      .number()
+      .int("Enter whole days")
+      .min(0, "Days cannot be negative")
+      .max(max, `Maximum ${max} days`)
+      .optional(),
+  );
+
+const optionalCharge = zod.preprocess(
+  blankToUndefined,
+  zod.coerce
+    .number()
+    .min(0, "Charge cannot be negative")
+    .max(100000, "Charge is too high")
+    .optional(),
+);
 
 export const deliverySettingsSchema = zod
   .object({
@@ -353,6 +420,8 @@ export const deliverySettingsSchema = zod
       .string()
       .trim()
       .regex(/^[1-9][0-9]{5}$/, "Enter a valid 6 digit pincode"),
+
+    // local
     radiusKm: zod.preprocess(
       blankToUndefined,
       zod.coerce
@@ -361,58 +430,27 @@ export const deliverySettingsSchema = zod
         .max(500, "Radius cannot exceed 500 km")
         .optional(),
     ),
-    localDeliveryDays: zod.preprocess(
-      blankToUndefined,
-      zod.coerce
-        .number()
-        .int("Enter whole days")
-        .min(0, "Days cannot be negative")
-        .max(30, "Maximum 30 days")
-        .optional(),
+    localSlabs: zod.array(slabItemSchema).max(20, "Too many slabs").default([]),
+
+    // order value rules
+    chargeRules: zod.array(ruleItemSchema).max(20, "Too many rules").default([]),
+
+    // national
+    nationalMinDays: optionalDays(60),
+    nationalMaxDays: optionalDays(60),
+    nationalFallbackCharge: optionalCharge,
+
+    // international
+    allowInternational: zod.boolean().default(false),
+    internationalMinDays: optionalDays(90),
+    internationalMaxDays: optionalDays(90),
+    internationalFallbackCharge: optionalCharge,
+
+    // dispatch time
+    handlingValue: requiredNumber("Enter dispatch time").pipe(
+      zod.number().min(0, "Cannot be negative").max(100000, "Too high"),
     ),
-    nationalMinDays: zod.preprocess(
-      blankToUndefined,
-      zod.coerce
-        .number()
-        .int("Enter whole days")
-        .min(0, "Days cannot be negative")
-        .max(60, "Maximum 60 days")
-        .optional(),
-    ),
-    nationalMaxDays: zod.preprocess(
-      blankToUndefined,
-      zod.coerce
-        .number()
-        .int("Enter whole days")
-        .min(0, "Days cannot be negative")
-        .max(60, "Maximum 60 days")
-        .optional(),
-    ),
-    handlingDays: zod.preprocess(
-      blankToUndefined,
-      zod.coerce
-        .number()
-        .int("Enter whole days")
-        .min(0, "Days cannot be negative")
-        .max(30, "Maximum 30 days")
-        .optional(),
-    ),
-    localDeliveryCharge: zod.preprocess(
-      blankToUndefined,
-      zod.coerce
-        .number()
-        .min(0, "Charge cannot be negative")
-        .max(100000, "Charge is too high")
-        .optional(),
-    ),
-    nationalFallbackCharge: zod.preprocess(
-      blankToUndefined,
-      zod.coerce
-        .number()
-        .min(0, "Charge cannot be negative")
-        .max(100000, "Charge is too high")
-        .optional(),
-    ),
+    handlingUnit: zod.enum(durationUnitValues),
   })
   .superRefine((d, ctx) => {
     const needsLocal = d.deliveryType === "LOCAL" || d.deliveryType === "BOTH";
@@ -422,31 +460,61 @@ export const deliverySettingsSchema = zod
     if (needsLocal) {
       if (d.radiusKm === undefined) {
         ctx.addIssue({
-          code: zod.ZodIssueCode.custom,
+          code: "custom",
           path: ["radiusKm"],
-          message: "Delivery radius is required for local delivery",
+          message: "Delivery radius is required",
         });
       }
-      if (d.localDeliveryDays === undefined) {
+      if (d.localSlabs.length === 0) {
         ctx.addIssue({
-          code: zod.ZodIssueCode.custom,
-          path: ["localDeliveryDays"],
-          message: "Local delivery days is required",
+          code: "custom",
+          path: ["localSlabs"],
+          message: "Add at least one distance slab",
         });
       }
+      const seen = new Set<number>();
+      d.localSlabs.forEach((s, i) => {
+        if (d.radiusKm !== undefined && s.upToKm > d.radiusKm) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["localSlabs", i, "upToKm"],
+            message: "More than your radius",
+          });
+        }
+        if (seen.has(s.upToKm)) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["localSlabs", i, "upToKm"],
+            message: "Same distance twice",
+          });
+        }
+        seen.add(s.upToKm);
+      });
     }
+
+    const seenRules = new Set<number>();
+    d.chargeRules.forEach((r, i) => {
+      if (seenRules.has(r.minOrderValue)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["chargeRules", i, "minOrderValue"],
+          message: "Same order value twice",
+        });
+      }
+      seenRules.add(r.minOrderValue);
+    });
 
     if (needsNational) {
       if (d.nationalMinDays === undefined) {
         ctx.addIssue({
-          code: zod.ZodIssueCode.custom,
+          code: "custom",
           path: ["nationalMinDays"],
           message: "Minimum days is required",
         });
       }
       if (d.nationalMaxDays === undefined) {
         ctx.addIssue({
-          code: zod.ZodIssueCode.custom,
+          code: "custom",
           path: ["nationalMaxDays"],
           message: "Maximum days is required",
         });
@@ -457,8 +525,44 @@ export const deliverySettingsSchema = zod
         d.nationalMaxDays < d.nationalMinDays
       ) {
         ctx.addIssue({
-          code: zod.ZodIssueCode.custom,
+          code: "custom",
           path: ["nationalMaxDays"],
+          message: "Max days cannot be less than min days",
+        });
+      }
+    }
+
+    if (d.allowInternational) {
+      if (!needsNational) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["allowInternational"],
+          message: "International delivery needs courier delivery to be ON",
+        });
+      }
+      // international ON hole min / max days dutoi lagbe (age blank gele undefined payload e jeto)
+      if (d.internationalMinDays === undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["internationalMinDays"],
+          message: "Minimum days is required",
+        });
+      }
+      if (d.internationalMaxDays === undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["internationalMaxDays"],
+          message: "Maximum days is required",
+        });
+      }
+      if (
+        d.internationalMinDays !== undefined &&
+        d.internationalMaxDays !== undefined &&
+        d.internationalMaxDays < d.internationalMinDays
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["internationalMaxDays"],
           message: "Max days cannot be less than min days",
         });
       }

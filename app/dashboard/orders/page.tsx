@@ -389,17 +389,14 @@ function OrdersPage() {
         <p className="font-semibold text-gray-800">
           ₹{Number(rowData.totalAmount).toFixed(2)}
         </p>
-        {/* [GST] totalAmount GST soho, tai MRP kom hole-i strikethrough */}
-        {showStrikeMrp(rowData) && (
-          <p className="text-xs text-gray-400 line-through">
-            ₹{Number(rowData.totalMrp).toFixed(2)}
+        {Number(rowData.shippingCharge || 0) > 0 && (
+          <p className="text-[11px] text-gray-500">
+            incl. ₹{Number(rowData.shippingCharge).toFixed(2)} shipping
           </p>
         )}
-        {Number(rowData.totalGst) > 0 && (
-          <p className="text-[11px] text-green-700">
-            incl. GST ₹{Number(rowData.totalGst).toFixed(2)}
-          </p>
-        )}
+        <p className="text-xs text-gray-400 line-through">
+          ₹{Number(rowData.totalMrp).toFixed(2)}
+        </p>
       </div>
     );
   };
@@ -577,9 +574,11 @@ function OrdersPage() {
                           <span className="font-medium">📦 Items:</span>{" "}
                           {order.totalItems}
                         </p>
-                        <p>
+                         <p>
                           <span className="font-medium">💳 Payment:</span>{" "}
-                          {order.paymentMethod} ({order.paymentStatus})
+                          {order.paymentOff
+                            ? "Paid to store directly"
+                            : `${order.paymentMethod} (${order.paymentStatus})`}
                         </p>
                         {order.deliveryEnabled !== false && (
                           <p>
@@ -613,12 +612,11 @@ function OrdersPage() {
                           </>
                         )}
                       </div>
-                      {!isQuotePending(order) &&
-                        Number(order.totalGst) > 0 && (
-                          <p className="text-[11px] text-green-700 text-right">
-                            incl. GST ₹{Number(order.totalGst).toFixed(2)}
-                          </p>
-                        )}
+                      {!isQuotePending(order) && Number(order.totalGst) > 0 && (
+                        <p className="text-[11px] text-green-700 text-right">
+                          incl. GST ₹{Number(order.totalGst).toFixed(2)}
+                        </p>
+                      )}
                     </div>
 
                     {nextStatuses.length > 0 && (
@@ -719,7 +717,9 @@ function OrdersPage() {
             <Column
               header="Payment"
               body={(row: OrderRow) =>
-                `${row.paymentMethod} • ${row.paymentStatus}`
+                row.paymentOff
+                  ? "Paid to store directly"
+                  : `${row.paymentMethod} • ${row.paymentStatus}`
               }
             />
             <Column header="Status" body={statusTemplate} />

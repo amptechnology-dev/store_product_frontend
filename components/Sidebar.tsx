@@ -50,6 +50,7 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
   // [STOCK] kono store er stock management on thakle-i Stock menu dekhabe
   const [stockEnabled, setStockEnabled] = useState(false);
   const [deliveryEnabled, setDeliveryEnabled] = useState(true);
+  const [paymentEnabled, setPaymentEnabled] = useState(true);
 
   const isActive = (href?: string) => {
     if (!href) return false;
@@ -72,18 +73,21 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
               .then((r) => ({
                 stock: !!r.data?.settings?.hasStockManagement,
                 delivery: r.data?.settings?.hasDelivery !== false,
+                payment: r.data?.settings?.paymentMode !== "OFF",
               }))
-              .catch(() => ({ stock: false, delivery: true })),
+              .catch(() => ({ stock: false, delivery: true, payment: true })),
           ),
         );
         if (!cancelled) {
           setStockEnabled(results.some((r) => r.stock));
           setDeliveryEnabled(results.some((r) => r.delivery));
+          setPaymentEnabled(results.some((r) => r.payment));
         }
       } catch {
         if (!cancelled) {
           setStockEnabled(false);
           setDeliveryEnabled(true);
+          setPaymentEnabled(true);
         }
       }
     };
@@ -236,17 +240,21 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
                     },
                   ]
                 : []),
-              {
-                label: "Payments",
-                icon: "pi-wallet",
-                href: "/dashboard/payments",
-              },
-              // [PAYOUT] STORE: admin theke koto taka peyechi
-              {
-                label: "Settlements",
-                icon: "pi-money-bill",
-                href: "/dashboard/payouts",
-              },
+              // payment OFF hole Payments + Settlements dutoi hide hobe
+              ...(paymentEnabled
+                ? [
+                    {
+                      label: "Payments",
+                      icon: "pi-wallet",
+                      href: "/dashboard/payments",
+                    },
+                    {
+                      label: "Settlements",
+                      icon: "pi-money-bill",
+                      href: "/dashboard/payouts",
+                    },
+                  ]
+                : []),
               {
                 label: "Customers",
                 icon: "pi-user",
@@ -448,7 +456,7 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
 
               return (
                 <Link
-                  key={item.label}
+                  key={item.href || item.label}
                   href={item.href || "#"}
                   className={`sidebar-link${active ? " active" : ""}`}
                   style={{

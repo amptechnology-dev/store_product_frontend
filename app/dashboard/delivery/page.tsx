@@ -1,22 +1,18 @@
 "use client";
 
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast, ToastContainer } from "react-toastify";
 import axiosInstance from "@/service/axios.service";
 import { Button } from "primereact/button";
 import { InputNumber } from "primereact/inputnumber";
 import { InputText } from "primereact/inputtext";
+import { InputSwitch } from "primereact/inputswitch";
 import { IconField } from "primereact/iconfield";
 import { InputIcon } from "primereact/inputicon";
 import { Dialog } from "primereact/dialog";
 // NOTE: path ta tomar schema.ts er asol path diye bodle nao
-import { deliverySettingsSchema } from "../../../helper/schema/Schema";
+import { deliverySettingsSchema } from "@/helper/schema/Schema";
+import { getStoreSettings } from "@/service/storeSetting.service";
 import {
   DeliverySettings,
   DeliveryType,
@@ -29,8 +25,14 @@ import {
   lookupPincode,
   checkDelivery,
 } from "@/service/delivery.service";
-import { formatDaysLabel, formatEstimateRange } from "@/helper/delivery";
-import { getStoreSettings } from "@/service/storeSetting.service";
+import {
+  DurationUnit,
+  formatDurationLabel,
+  formatEstimateAt,
+  formatEstimateRange,
+  getEtaLabel,
+  toMinutes,
+} from "@/helper/delivery";
 
 type StoreOption = {
   _id: string;
@@ -38,64 +40,97 @@ type StoreOption = {
   storeUniqueId?: string;
 };
 
+type SlabForm = {
+  id: string;
+  upToKm: number | null;
+  charge: number | null;
+  etaValue: number | null;
+  etaUnit: DurationUnit;
+};
+
+type RuleForm = {
+  id: string;
+  minOrderValue: number | null;
+  charge: number | null;
+};
+
 type FormState = {
-  deliveryType: DeliveryType;
+  local: boolean; // radius er moddhe delivery
+  outside: boolean; // radius er baire (courier)
+  allowInternational: boolean;
   pincode: string;
   radiusKm: number | null;
-  localDeliveryDays: number | null;
+  slabs: SlabForm[];
+  rules: RuleForm[];
   nationalMinDays: number | null;
   nationalMaxDays: number | null;
-  handlingDays: number | null;
-  localDeliveryCharge: number | null;
   nationalFallbackCharge: number | null;
+  internationalMinDays: number | null;
+  internationalMaxDays: number | null;
+  internationalFallbackCharge: number | null;
+  handlingValue: number | null;
+  handlingUnit: DurationUnit;
 };
 
-const DEFAULT_FORM: FormState = {
-  deliveryType: "BOTH",
-  pincode: "",
-  radiusKm: 20,
-  localDeliveryDays: 1,
-  nationalMinDays: 4,
-  nationalMaxDays: 7,
-  handlingDays: 1,
-  localDeliveryCharge: 0,
-  nationalFallbackCharge: 0,
-};
-
-const TYPE_OPTIONS: {
-  value: DeliveryType;
-  label: string;
-  icon: string;
-  desc: string;
-}[] = [
-  {
-    value: "LOCAL",
-    label: "Local",
-    icon: "pi-map-marker",
-    desc: "Deliver only inside a radius around your store",
-  },
-  {
-    value: "NATIONAL",
-    label: "National",
-    icon: "pi-globe",
-    desc: "Shipped anywhere in India through courier partners",
-  },
-  {
-    value: "BOTH",
-    label: "Both",
-    icon: "pi-sitemap",
-    desc: "Local radius first, courier for everywhere else",
-  },
+const UNIT_OPTIONS: { value: DurationUnit; label: string }[] = [
+  { value: "MINUTES", label: "Minutes" },
+  { value: "HOURS", label: "Hours" },
+  { value: "DAYS", label: "Days" },
 ];
 
 const RADIUS_PRESETS = [5, 10, 20, 50, 100];
-
 const PINCODE_REGEX = /^[1-9][0-9]{5}$/;
+
+const uid = () => Math.random().toString(36).slice(2, 10);
+
+const newSlab = (upToKm: number | null = null): SlabForm => ({
+  id: uid(),
+  upToKm,
+  charge: 0,
+  etaValue: 1,
+  etaUnit: "DAYS",
+});
+
+const newRule = (): RuleForm => ({
+  id: uid(),
+  minOrderValue: null,
+  charge: 0,
+});
+
+const makeDefaultForm = (): FormState => ({
+  local: true,
+  outside: false,
+  allowInternational: false,
+  pincode: "",
+  radiusKm: 20,
+  slabs: [newSlab(20)],
+  rules: [],
+  nationalMinDays: 4,
+  nationalMaxDays: 7,
+  nationalFallbackCharge: 0,
+  internationalMinDays: 7,
+  internationalMaxDays: 14,
+  internationalFallbackCharge: 0,
+  handlingValue: 1,
+  handlingUnit: "DAYS",
+});
 
 const errMsg = (err: any, fallback: string) =>
   err?.response?.data?.errors?.[0]?.message ||
   err?.response?.data?.message ||
   fallback;
+
+const isIndiaCountry = (c: string) => {
+  const v = c.trim().toLowerCase();
+  return !v || ["india", "in", "ind", "bharat"].includes(v);
+};
+
+const inr = (n: number | null | undefined) =>
+  n === null || n === undefined
+    ? "-"
+    : n === 0
+      ? "Free"
+      : `₹${Number(n).toFixed(2).replace(/\.00$/, "")}`;
 
 const FieldError = ({ msg }: { msg?: string }) =>
   msg ? (
@@ -111,16 +146,134 @@ const Spinner = () => (
   </div>
 );
 
-function DaysField({
-  label,
-  hint,
+// ---------- ekta switch row ----------
+function ToggleRow({
+  icon,
+  title,
+  desc,
+  checked,
+  disabled,
+  onChange,
+  error,
+}: {
+  icon: string;
+  title: string;
+  desc: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (v: boolean) => void;
+  error?: string;
+}) {
+  return (
+    <div>
+      <div
+        className={`flex items-center justify-between gap-3 rounded-lg border p-3 ${
+          checked ? "border-blue-300 bg-blue-50/60" : "border-gray-200"
+        }`}
+      >
+        <div className="flex items-start gap-3 min-w-0">
+          <i
+            className={`pi ${icon} mt-0.5 ${
+              checked ? "text-blue-600" : "text-gray-400"
+            }`}
+          />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-gray-800">{title}</p>
+            <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
+              {desc}
+            </p>
+          </div>
+        </div>
+        <InputSwitch
+          checked={checked}
+          disabled={disabled}
+          onChange={(e) => onChange(!!e.value)}
+        />
+      </div>
+      <FieldError msg={error} />
+    </div>
+  );
+}
+
+// ---------- value + unit (Minutes / Hours / Days) ----------
+function DurationInput({
+  value,
+  unit,
+  onValue,
+  onUnit,
+  error,
+}: {
+  value: number | null;
+  unit: DurationUnit;
+  onValue: (v: number | null) => void;
+  onUnit: (u: DurationUnit) => void;
+  error?: string;
+}) {
+  return (
+    <div>
+      <div className="flex gap-1.5">
+        <InputNumber
+          value={value}
+          onValueChange={(e) => onValue(e.value ?? null)}
+          mode="decimal"
+          min={0}
+          max={100000}
+          maxFractionDigits={2}
+          useGrouping={false}
+          className="flex-1 min-w-0"
+          inputClassName={`w-full p-inputtext-sm ${error ? "p-invalid" : ""}`}
+        />
+        <select
+          value={unit}
+          onChange={(e) => onUnit(e.target.value as DurationUnit)}
+          className="border rounded-md px-2 py-1.5 bg-white text-sm"
+        >
+          {UNIT_OPTIONS.map((u) => (
+            <option key={u.value} value={u.value}>
+              {u.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <FieldError msg={error} />
+    </div>
+  );
+}
+
+function MoneyInput({
   value,
   onChange,
   error,
-  max = 30,
+}: {
+  value: number | null;
+  onChange: (v: number | null) => void;
+  error?: string;
+}) {
+  return (
+    <div>
+      <InputNumber
+        value={value}
+        onValueChange={(e) => onChange(e.value ?? null)}
+        mode="currency"
+        currency="INR"
+        locale="en-IN"
+        min={0}
+        className="w-full"
+        inputClassName={`w-full p-inputtext-sm ${error ? "p-invalid" : ""}`}
+      />
+      <FieldError msg={error} />
+    </div>
+  );
+}
+
+function DaysInput({
+  label,
+  value,
+  onChange,
+  error,
+  max = 60,
 }: {
   label: string;
-  hint?: string;
   value: number | null;
   onChange: (v: number | null) => void;
   error?: string;
@@ -141,9 +294,6 @@ function DaysField({
         className="w-full"
         inputClassName={`w-full p-inputtext-sm ${error ? "p-invalid" : ""}`}
       />
-      {hint && !error && (
-        <small className="text-gray-400 block mt-1">{hint}</small>
-      )}
       <FieldError msg={error} />
     </div>
   );
@@ -154,13 +304,13 @@ function DeliveryPage() {
   const [storesLoading, setStoresLoading] = useState(true);
   const [storeId, setStoreId] = useState("");
 
-  const [form, setForm] = useState<FormState>(DEFAULT_FORM);
+  const [form, setForm] = useState<FormState>(makeDefaultForm());
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<DeliverySettings | null>(null);
-  const [deliveryOff, setDeliveryOff] = useState(false);
   const [coverCount, setCoverCount] = useState<number | null>(null);
+  const [deliveryOff, setDeliveryOff] = useState(false);
 
   // store pincode lookup (area / district / state dekhano)
   const [pincodeInfo, setPincodeInfo] = useState<PincodeInfo | null>(null);
@@ -187,20 +337,17 @@ function DeliveryPage() {
     search: "",
   });
 
-  // customer pincode diye test
+  // customer address diye test
   const [testPin, setTestPin] = useState("");
+  const [testCountry, setTestCountry] = useState("India");
+  const [testValue, setTestValue] = useState<number | null>(null);
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<DeliveryCheckResult | null>(
-    null,
-  );
+  const [testResult, setTestResult] = useState<DeliveryCheckResult | null>(null);
 
   const selectedStore = useMemo(
     () => stores.find((s) => s._id === storeId) || null,
     [stores, storeId],
   );
-
-  const needsLocal = form.deliveryType !== "NATIONAL";
-  const needsNational = form.deliveryType !== "LOCAL";
 
   // ---------- stores load ----------
   useEffect(() => {
@@ -228,6 +375,7 @@ function DeliveryPage() {
         getStoreSettings(id).catch(() => null),
       ]);
       setDeliveryOff(general?.data?.settings?.hasDelivery === false);
+
       const s: DeliverySettings | null = res.data?.settings || null;
 
       setSaved(s);
@@ -236,22 +384,52 @@ function DeliveryPage() {
       setTestResult(null);
       setTestPin("");
 
-      if (s) {
-        setForm({
-          deliveryType: s.deliveryType,
-          pincode: s.pincode,
-          radiusKm: s.radiusKm ?? DEFAULT_FORM.radiusKm,
-          localDeliveryDays:
-            s.localDeliveryDays ?? DEFAULT_FORM.localDeliveryDays,
-          nationalMinDays: s.nationalMinDays ?? DEFAULT_FORM.nationalMinDays,
-          nationalMaxDays: s.nationalMaxDays ?? DEFAULT_FORM.nationalMaxDays,
-          handlingDays: s.handlingDays ?? DEFAULT_FORM.handlingDays,
-          localDeliveryCharge: s.localDeliveryCharge ?? 0,
-          nationalFallbackCharge: s.nationalFallbackCharge ?? 0,
-        });
-      } else {
-        setForm(DEFAULT_FORM);
+      if (!s) {
+        setForm(makeDefaultForm());
+        return;
       }
+
+      const slabs: SlabForm[] =
+        s.localSlabs && s.localSlabs.length > 0
+          ? s.localSlabs.map((x) => ({
+              id: uid(),
+              upToKm: x.upToKm,
+              charge: x.charge,
+              etaValue: x.etaValue,
+              etaUnit: x.etaUnit,
+            }))
+          : // purono setting (slab nei): flat charge / din theke ekta slab
+            [
+              {
+                id: uid(),
+                upToKm: s.radiusKm ?? 20,
+                charge: s.localDeliveryCharge ?? 0,
+                etaValue: s.localDeliveryDays ?? 1,
+                etaUnit: "DAYS" as DurationUnit,
+              },
+            ];
+
+      setForm({
+        local: s.deliveryType !== "NATIONAL",
+        outside: s.deliveryType !== "LOCAL",
+        allowInternational: s.allowInternational === true,
+        pincode: s.pincode,
+        radiusKm: s.radiusKm ?? 20,
+        slabs,
+        rules: (s.chargeRules || []).map((r) => ({
+          id: uid(),
+          minOrderValue: r.minOrderValue,
+          charge: r.charge,
+        })),
+        nationalMinDays: s.nationalMinDays ?? 4,
+        nationalMaxDays: s.nationalMaxDays ?? 7,
+        nationalFallbackCharge: s.nationalFallbackCharge ?? 0,
+        internationalMinDays: s.internationalMinDays ?? 7,
+        internationalMaxDays: s.internationalMaxDays ?? 14,
+        internationalFallbackCharge: s.internationalFallbackCharge ?? 0,
+        handlingValue: s.handlingValue ?? s.handlingDays ?? 1,
+        handlingUnit: s.handlingUnit ?? "DAYS",
+      });
     } catch (error: any) {
       toast.error(errMsg(error, "Failed to load delivery settings"));
     } finally {
@@ -297,28 +475,117 @@ function DeliveryPage() {
   }, [form.pincode]);
 
   // ---------- form helpers ----------
+  const clearError = (key: string) => {
+    setErrors((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
-    if (errors[key as string]) {
-      setErrors((prev) => {
-        const next = { ...prev };
-        delete next[key as string];
-        return next;
-      });
-    }
+    clearError(key as string);
+  };
+
+  const toggleLocal = (v: boolean) => {
+    setForm((p) => ({ ...p, local: v }));
+  };
+
+  const toggleOutside = (v: boolean) => {
+    setForm((p) => ({
+      ...p,
+      outside: v,
+      allowInternational: v ? p.allowInternational : false,
+    }));
+  };
+
+  const updateSlab = (id: string, patch: Partial<SlabForm>) => {
+    setForm((p) => ({
+      ...p,
+      slabs: p.slabs.map((s) => (s.id === id ? { ...s, ...patch } : s)),
+    }));
+    setErrors({});
+  };
+
+  const addSlab = () => {
+    setForm((p) => {
+      const last = p.slabs[p.slabs.length - 1];
+      const lastKm = last?.upToKm ?? null;
+      const candidate =
+        lastKm !== null ? Math.min(lastKm + 5, p.radiusKm ?? 500) : null;
+      // last slab e radius er soman hole same distance hoye jabe, tai blank rakhi
+      const next = candidate !== null && candidate > (lastKm ?? 0) ? candidate : null;
+      return { ...p, slabs: [...p.slabs, newSlab(next)] };
+    });
+  };
+
+  const removeSlab = (id: string) => {
+    setForm((p) => ({ ...p, slabs: p.slabs.filter((s) => s.id !== id) }));
+    setErrors({});
+  };
+
+  const updateRule = (id: string, patch: Partial<RuleForm>) => {
+    setForm((p) => ({
+      ...p,
+      rules: p.rules.map((r) => (r.id === id ? { ...r, ...patch } : r)),
+    }));
+    setErrors({});
+  };
+
+  const addRule = () => setForm((p) => ({ ...p, rules: [...p.rules, newRule()] }));
+
+  const removeRule = (id: string) => {
+    setForm((p) => ({ ...p, rules: p.rules.filter((r) => r.id !== id) }));
+    setErrors({});
   };
 
   // ---------- save ----------
   const handleSave = async () => {
     if (!storeId) return;
 
-    const parsed = deliverySettingsSchema.safeParse({ storeId, ...form });
+    const deliveryType: DeliveryType | null =
+      form.local && form.outside
+        ? "BOTH"
+        : form.local
+          ? "LOCAL"
+          : form.outside
+            ? "NATIONAL"
+            : null;
+
+    if (!deliveryType) {
+      toast.error("Turn on at least one delivery option");
+      return;
+    }
+
+    const parsed = deliverySettingsSchema.safeParse({
+      storeId,
+      deliveryType,
+      pincode: form.pincode,
+      // local OFF hole hidden radius / slab validate korbo na
+      radiusKm: form.local ? form.radiusKm : undefined,
+      localSlabs: form.local ? form.slabs.map(({ id, ...rest }) => rest) : [],
+      chargeRules: form.rules.map(({ id, ...rest }) => rest),
+      nationalMinDays: form.nationalMinDays,
+      nationalMaxDays: form.nationalMaxDays,
+      nationalFallbackCharge: form.nationalFallbackCharge,
+      allowInternational: form.allowInternational,
+      internationalMinDays: form.internationalMinDays,
+      internationalMaxDays: form.internationalMaxDays,
+      internationalFallbackCharge: form.internationalFallbackCharge,
+      handlingValue: form.handlingValue,
+      handlingUnit: form.handlingUnit,
+    });
+
     if (!parsed.success) {
       const map: Record<string, string> = {};
-      parsed.error.issues.forEach((issue) => {
-        const key = String(issue.path[0] ?? "form");
-        if (!map[key]) map[key] = issue.message;
-      });
+      parsed.error.issues.forEach(
+        (issue: { path: PropertyKey[]; message: string }) => {
+          const key = issue.path.map(String).join(".") || "form";
+          if (!map[key]) map[key] = issue.message;
+        },
+      );
       setErrors(map);
       toast.error("Please fix the highlighted fields");
       return;
@@ -341,19 +608,25 @@ function DeliveryPage() {
       storeId: d.storeId,
       deliveryType: d.deliveryType,
       pincode: d.pincode,
-      handlingDays: d.handlingDays ?? 1,
+      handlingValue: d.handlingValue,
+      handlingUnit: d.handlingUnit,
+      chargeRules: d.chargeRules,
       ...(local
-        ? {
-            radiusKm: d.radiusKm,
-            localDeliveryDays: d.localDeliveryDays,
-            localDeliveryCharge: d.localDeliveryCharge ?? 0,
-          }
+        ? { radiusKm: d.radiusKm, localSlabs: d.localSlabs }
         : {}),
       ...(national
         ? {
             nationalMinDays: d.nationalMinDays,
             nationalMaxDays: d.nationalMaxDays,
             nationalFallbackCharge: d.nationalFallbackCharge ?? 0,
+            allowInternational: d.allowInternational,
+            ...(d.allowInternational
+              ? {
+                  internationalMinDays: d.internationalMinDays,
+                  internationalMaxDays: d.internationalMaxDays,
+                  internationalFallbackCharge: d.internationalFallbackCharge ?? 0,
+                }
+              : {}),
           }
         : {}),
     };
@@ -371,7 +644,6 @@ function DeliveryPage() {
       setErrors({});
       setTestResult(null);
     } catch (error: any) {
-      // backend field error thakle sei field e dekhao
       const backendErrors = error?.response?.data?.errors;
       if (Array.isArray(backendErrors)) {
         const map: Record<string, string> = {};
@@ -417,11 +689,15 @@ function DeliveryPage() {
     );
   }, [cover.pincodes, cover.search]);
 
-  // ---------- test customer pincode ----------
+  // ---------- test customer address ----------
+  const testIsIndia = isIndiaCountry(testCountry);
+
   const runTest = async () => {
     const pin = testPin.trim();
-    if (!PINCODE_REGEX.test(pin)) {
-      toast.error("Enter a valid 6 digit pincode");
+    if (testIsIndia ? !PINCODE_REGEX.test(pin) : pin.length < 3) {
+      toast.error(
+        testIsIndia ? "Enter a valid 6 digit pincode" : "Enter a valid postal code",
+      );
       return;
     }
     if (!selectedStore?.storeUniqueId) {
@@ -431,24 +707,45 @@ function DeliveryPage() {
     try {
       setTesting(true);
       setTestResult(null);
-      const res = await checkDelivery(selectedStore.storeUniqueId, pin);
+      const res = await checkDelivery(selectedStore.storeUniqueId, pin, {
+        country: testCountry.trim() || "India",
+        ...(testValue !== null ? { itemsTotal: testValue } : {}),
+      });
       setTestResult(res.data);
     } catch (error: any) {
-      toast.error(errMsg(error, "Could not check this pincode"));
+      toast.error(errMsg(error, "Could not check this address"));
     } finally {
       setTesting(false);
     }
   };
 
   // ---------- live preview (customer ki dekhbe) ----------
-  const handling = form.handlingDays ?? 0;
-  const localLabel = formatDaysLabel(
-    handling + (form.localDeliveryDays ?? 0),
-    handling + (form.localDeliveryDays ?? 0),
+  const handlingMin = toMinutes(form.handlingValue ?? 0, form.handlingUnit);
+
+  const slabPreview = [...form.slabs]
+    .filter((s) => s.upToKm !== null)
+    .sort((a, b) => (a.upToKm ?? 0) - (b.upToKm ?? 0))
+    .map((s) => {
+      const total = handlingMin + toMinutes(s.etaValue ?? 0, s.etaUnit);
+      return {
+        id: s.id,
+        upToKm: s.upToKm as number,
+        charge: s.charge ?? 0,
+        label: formatDurationLabel(total, total),
+      };
+    });
+
+  const rulePreview = [...form.rules]
+    .filter((r) => r.minOrderValue !== null)
+    .sort((a, b) => (a.minOrderValue ?? 0) - (b.minOrderValue ?? 0));
+
+  const nationalLabel = formatDurationLabel(
+    handlingMin + (form.nationalMinDays ?? 0) * 1440,
+    handlingMin + (form.nationalMaxDays ?? 0) * 1440,
   );
-  const nationalLabel = formatDaysLabel(
-    handling + (form.nationalMinDays ?? 0),
-    handling + (form.nationalMaxDays ?? 0),
+  const intlLabel = formatDurationLabel(
+    handlingMin + (form.internationalMinDays ?? 0) * 1440,
+    handlingMin + (form.internationalMaxDays ?? 0) * 1440,
   );
 
   // ---------- header ----------
@@ -462,7 +759,7 @@ function DeliveryPage() {
           Delivery
         </h2>
         <p className="text-xs text-blue-100">
-          Set where you deliver and how long it takes
+          Set where you deliver, how long it takes and what it costs
         </p>
       </div>
 
@@ -539,47 +836,40 @@ function DeliveryPage() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
             {/* ---------------- LEFT: form ---------------- */}
             <div className="lg:col-span-2 space-y-3">
-              {/* Delivery type */}
-              <div className="border border-blue-100 rounded-lg p-3">
-                <p className="text-sm font-semibold text-gray-700 mb-2">
-                  Delivery type
+              {/* Where */}
+              <div className="border border-blue-100 rounded-lg p-3 space-y-2">
+                <p className="text-sm font-semibold text-gray-700">
+                  Where do you deliver?
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  {TYPE_OPTIONS.map((opt) => {
-                    const active = form.deliveryType === opt.value;
-                    return (
-                      <button
-                        type="button"
-                        key={opt.value}
-                        onClick={() => setField("deliveryType", opt.value)}
-                        className={`text-left rounded-lg border p-3 transition-colors ${
-                          active
-                            ? "border-blue-500 bg-blue-50"
-                            : "border-gray-200 hover:bg-gray-50"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <i
-                            className={`pi ${opt.icon} ${
-                              active ? "text-blue-600" : "text-gray-400"
-                            }`}
-                          />
-                          <span
-                            className={`text-sm font-semibold ${
-                              active ? "text-blue-800" : "text-gray-700"
-                            }`}
-                          >
-                            {opt.label}
-                          </span>
-                          {active && (
-                            <i className="pi pi-check-circle text-blue-600 ml-auto" />
-                          )}
-                        </div>
-                        <p className="text-xs text-gray-500 mt-1">{opt.desc}</p>
-                      </button>
-                    );
-                  })}
-                </div>
+
+                <ToggleRow
+                  icon="pi-map-marker"
+                  title="Within my radius"
+                  desc="You deliver to customers inside the radius you set below"
+                  checked={form.local}
+                  disabled={form.local && !form.outside}
+                  onChange={toggleLocal}
+                />
+
+                <ToggleRow
+                  icon="pi-truck"
+                  title="Outside my radius (courier)"
+                  desc="Also deliver outside your radius by courier. If this is OFF, customers outside your radius cannot place an order from your store"
+                  checked={form.outside}
+                  disabled={form.outside && !form.local}
+                  onChange={toggleOutside}
+                />
+
+                {form.outside && (
+                  <ToggleRow
+                    icon="pi-globe"
+                    title="Other countries (international)"
+                    desc="Also accept addresses and postal codes from outside India. Needs international shipping to be active on your courier account"
+                    checked={form.allowInternational}
+                    onChange={(v) => setField("allowInternational", v)}
+                    error={errors.allowInternational}
+                  />
+                )}
               </div>
 
               {/* Store pincode */}
@@ -628,165 +918,313 @@ function DeliveryPage() {
                 )}
                 <FieldError msg={errors.pincode} />
                 <p className="text-[11px] text-gray-400 mt-1.5">
-                  This is the centre point of your delivery radius.
+                  This is the centre of your delivery radius and the courier
+                  pickup point.
                 </p>
               </div>
 
-              {/* Local delivery */}
-              {needsLocal && (
-                <div className="border border-blue-100 rounded-lg p-3">
-                  <p className="text-sm font-semibold text-gray-700 mb-2">
+              {/* Local: radius + slabs */}
+              {form.local && (
+                <div className="border border-blue-100 rounded-lg p-3 space-y-3">
+                  <p className="text-sm font-semibold text-gray-700">
                     <i className="pi pi-map-marker text-blue-600 mr-1.5"></i>
-                    Local delivery
+                    Delivery inside my radius
                   </p>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-sm font-semibold text-gray-700 block mb-1">
-                        Delivery radius <span className="text-red-500">*</span>
-                      </label>
-                      <InputNumber
-                        value={form.radiusKm}
-                        onValueChange={(e) =>
-                          setField("radiusKm", e.value ?? null)
-                        }
-                        min={1}
-                        max={500}
-                        suffix=" km"
-                        useGrouping={false}
-                        className="w-full"
-                        inputClassName={`w-full p-inputtext-sm ${
-                          errors.radiusKm ? "p-invalid" : ""
-                        }`}
-                      />
-                      <FieldError msg={errors.radiusKm} />
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        {RADIUS_PRESETS.map((r) => (
-                          <button
-                            type="button"
-                            key={r}
-                            onClick={() => setField("radiusKm", r)}
-                            className={`px-2 py-0.5 rounded-full text-xs border transition-colors ${
-                              form.radiusKm === r
-                                ? "bg-blue-600 text-white border-blue-600"
-                                : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
-                            }`}
-                          >
-                            {r} km
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <DaysField
-                      label="Local delivery time"
-                      hint="Transit time after your dispatch time"
-                      value={form.localDeliveryDays}
-                      onChange={(v) => setField("localDeliveryDays", v)}
-                      error={errors.localDeliveryDays}
+                  <div className="sm:w-1/2">
+                    <label className="text-sm font-semibold text-gray-700 block mb-1">
+                      Delivery radius <span className="text-red-500">*</span>
+                    </label>
+                    <InputNumber
+                      value={form.radiusKm}
+                      onValueChange={(e) => setField("radiusKm", e.value ?? null)}
+                      min={1}
+                      max={500}
+                      suffix=" km"
+                      useGrouping={false}
+                      className="w-full"
+                      inputClassName={`w-full p-inputtext-sm ${
+                        errors.radiusKm ? "p-invalid" : ""
+                      }`}
                     />
-                    <div>
-                      <label className="text-sm font-semibold text-gray-700 block mb-1">
-                        Local delivery charge
-                      </label>
-                      <InputNumber
-                        value={form.localDeliveryCharge}
-                        onValueChange={(e) =>
-                          setField("localDeliveryCharge", e.value ?? null)
-                        }
-                        mode="currency"
-                        currency="INR"
-                        locale="en-IN"
-                        min={0}
-                        className="w-full"
-                        inputClassName={`w-full p-inputtext-sm ${
-                          errors.localDeliveryCharge ? "p-invalid" : ""
-                        }`}
-                      />
-                      {!errors.localDeliveryCharge && (
-                        <small className="text-gray-400 block mt-1">
-                          Added to the customer&apos;s total at payment. 0 =
-                          free
-                        </small>
-                      )}
-                      <FieldError msg={errors.localDeliveryCharge} />
+                    <FieldError msg={errors.radiusKm} />
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {RADIUS_PRESETS.map((r) => (
+                        <button
+                          type="button"
+                          key={r}
+                          onClick={() => setField("radiusKm", r)}
+                          className={`px-2 py-0.5 rounded-full text-xs border transition-colors ${
+                            form.radiusKm === r
+                              ? "bg-blue-600 text-white border-blue-600"
+                              : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+                          }`}
+                        >
+                          {r} km
+                        </button>
+                      ))}
                     </div>
                   </div>
 
-                  <p className="text-[11px] text-gray-400 mt-2">
-                    Radius is calculated from pincode locations, so it is an
-                    approximate distance.
-                  </p>
+                  <div>
+                    <div className="hidden sm:grid grid-cols-12 gap-2 text-[11px] font-semibold text-gray-500 mb-1 px-1">
+                      <span className="col-span-3">Up to distance</span>
+                      <span className="col-span-3">Delivery charge</span>
+                      <span className="col-span-5">Delivery time</span>
+                      <span className="col-span-1"></span>
+                    </div>
+
+                    <div className="space-y-2">
+                      {form.slabs.map((s, i) => (
+                        <div
+                          key={s.id}
+                          className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-start border border-gray-100 rounded-md p-2 sm:p-1 sm:border-0"
+                        >
+                          <div className="sm:col-span-3">
+                            <InputNumber
+                              value={s.upToKm}
+                              onValueChange={(e) =>
+                                updateSlab(s.id, { upToKm: e.value ?? null })
+                              }
+                              min={0}
+                              max={500}
+                              suffix=" km"
+                              mode="decimal"
+                              maxFractionDigits={1}
+                              useGrouping={false}
+                              className="w-full"
+                              inputClassName={`w-full p-inputtext-sm ${
+                                errors[`localSlabs.${i}.upToKm`] ? "p-invalid" : ""
+                              }`}
+                            />
+                            <FieldError msg={errors[`localSlabs.${i}.upToKm`]} />
+                          </div>
+
+                          <div className="sm:col-span-3">
+                            <MoneyInput
+                              value={s.charge}
+                              onChange={(v) => updateSlab(s.id, { charge: v })}
+                              error={errors[`localSlabs.${i}.charge`]}
+                            />
+                          </div>
+
+                          <div className="sm:col-span-5">
+                            <DurationInput
+                              value={s.etaValue}
+                              unit={s.etaUnit}
+                              onValue={(v) => updateSlab(s.id, { etaValue: v })}
+                              onUnit={(u) => updateSlab(s.id, { etaUnit: u })}
+                              error={errors[`localSlabs.${i}.etaValue`]}
+                            />
+                          </div>
+
+                          <div className="sm:col-span-1 flex sm:justify-center">
+                            <Button
+                              icon="pi pi-trash"
+                              text
+                              severity="danger"
+                              size="small"
+                              disabled={form.slabs.length === 1}
+                              onClick={() => removeSlab(s.id)}
+                              aria-label="Remove slab"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <FieldError msg={errors.localSlabs} />
+
+                    <Button
+                      label="Add distance slab"
+                      icon="pi pi-plus"
+                      outlined
+                      size="small"
+                      className="mt-2"
+                      onClick={addSlab}
+                    />
+
+                    <p className="text-[11px] text-gray-400 mt-2">
+                      Example: up to 5 km = ₹30 in 45 minutes, up to 15 km = ₹60
+                      in 3 hours. A customer farther than the last slab (but
+                      inside your radius) gets the last slab&apos;s charge and time.
+                    </p>
+                  </div>
                 </div>
               )}
 
-              {/* National delivery */}
-              {needsNational && (
+              {/* Order value rules */}
+              <div className="border border-blue-100 rounded-lg p-3">
+                <p className="text-sm font-semibold text-gray-700 mb-1">
+                  <i className="pi pi-tag text-blue-600 mr-1.5"></i>
+                  Charge by order value
+                </p>
+                <p className="text-xs text-gray-500 mb-2">
+                  Change the delivery charge when the order is big enough. Use ₹0
+                  for free delivery. The highest matching rule is used and the
+                  customer sees it before paying.
+                </p>
+
+                <div className="space-y-2">
+                  {form.rules.map((r, i) => (
+                    <div
+                      key={r.id}
+                      className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-start"
+                    >
+                      <div className="sm:col-span-5">
+                        <label className="text-[11px] font-semibold text-gray-500 block mb-0.5">
+                          If order is at least
+                        </label>
+                        <MoneyInput
+                          value={r.minOrderValue}
+                          onChange={(v) => updateRule(r.id, { minOrderValue: v })}
+                          error={errors[`chargeRules.${i}.minOrderValue`]}
+                        />
+                      </div>
+                      <div className="sm:col-span-5">
+                        <label className="text-[11px] font-semibold text-gray-500 block mb-0.5">
+                          Delivery charge becomes
+                        </label>
+                        <MoneyInput
+                          value={r.charge}
+                          onChange={(v) => updateRule(r.id, { charge: v })}
+                          error={errors[`chargeRules.${i}.charge`]}
+                        />
+                      </div>
+                      <div className="sm:col-span-2 flex sm:pt-5">
+                        <Button
+                          icon="pi pi-trash"
+                          text
+                          severity="danger"
+                          size="small"
+                          onClick={() => removeRule(r.id)}
+                          aria-label="Remove rule"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <FieldError msg={errors.chargeRules} />
+
+                <Button
+                  label="Add rule"
+                  icon="pi pi-plus"
+                  outlined
+                  size="small"
+                  className="mt-2"
+                  onClick={addRule}
+                />
+                <p className="text-[11px] text-gray-400 mt-2">
+                  Applies to your own delivery and courier delivery. If you give
+                  free or cheaper courier delivery, the extra courier cost is
+                  taken from your payout. International orders always pay the
+                  courier rate.
+                </p>
+              </div>
+
+              {/* National */}
+              {form.outside && (
                 <div className="border border-blue-100 rounded-lg p-3">
                   <p className="text-sm font-semibold text-gray-700 mb-2">
-                    <i className="pi pi-globe text-blue-600 mr-1.5"></i>
-                    National delivery (courier)
+                    <i className="pi pi-truck text-blue-600 mr-1.5"></i>
+                    Courier delivery (outside my radius, India)
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <DaysField
-                      label="Minimum days"
+                    <DaysInput
+                      label="Backup minimum days"
                       value={form.nationalMinDays}
                       onChange={(v) => setField("nationalMinDays", v)}
                       error={errors.nationalMinDays}
-                      max={60}
                     />
-                    <DaysField
-                      label="Maximum days"
+                    <DaysInput
+                      label="Backup maximum days"
                       value={form.nationalMaxDays}
                       onChange={(v) => setField("nationalMaxDays", v)}
                       error={errors.nationalMaxDays}
-                      max={60}
                     />
                   </div>
                   <div className="mt-3 sm:w-1/2">
                     <label className="text-sm font-semibold text-gray-700 block mb-1">
                       Backup courier charge
                     </label>
-                    <InputNumber
+                    <MoneyInput
                       value={form.nationalFallbackCharge}
-                      onValueChange={(e) =>
-                        setField("nationalFallbackCharge", e.value ?? null)
-                      }
-                      mode="currency"
-                      currency="INR"
-                      locale="en-IN"
-                      min={0}
-                      className="w-full"
-                      inputClassName={`w-full p-inputtext-sm ${
-                        errors.nationalFallbackCharge ? "p-invalid" : ""
-                      }`}
+                      onChange={(v) => setField("nationalFallbackCharge", v)}
+                      error={errors.nationalFallbackCharge}
                     />
-                    {!errors.nationalFallbackCharge && (
-                      <small className="text-gray-400 block mt-1">
-                        The courier rate is added automatically at checkout.
-                        This flat charge is used only when courier rates are not
-                        available
-                      </small>
-                    )}
-                    <FieldError msg={errors.nationalFallbackCharge} />
                   </div>
+                  <p className="text-[11px] text-gray-400 mt-2">
+                    The courier&apos;s real delivery time and rate for the
+                    customer&apos;s pincode are used automatically. These backup
+                    values are used only when courier rates are not available.
+                  </p>
                 </div>
               )}
 
-              {/* Handling */}
+              {/* International */}
+              {form.outside && form.allowInternational && (
+                <div className="border border-blue-100 rounded-lg p-3">
+                  <p className="text-sm font-semibold text-gray-700 mb-2">
+                    <i className="pi pi-globe text-blue-600 mr-1.5"></i>
+                    International delivery
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <DaysInput
+                      label="Backup minimum days"
+                      value={form.internationalMinDays}
+                      onChange={(v) => setField("internationalMinDays", v)}
+                      error={errors.internationalMinDays}
+                      max={90}
+                    />
+                    <DaysInput
+                      label="Backup maximum days"
+                      value={form.internationalMaxDays}
+                      onChange={(v) => setField("internationalMaxDays", v)}
+                      error={errors.internationalMaxDays}
+                      max={90}
+                    />
+                  </div>
+                  <div className="mt-3 sm:w-1/2">
+                    <label className="text-sm font-semibold text-gray-700 block mb-1">
+                      Backup international charge
+                    </label>
+                    <MoneyInput
+                      value={form.internationalFallbackCharge}
+                      onChange={(v) => setField("internationalFallbackCharge", v)}
+                      error={errors.internationalFallbackCharge}
+                    />
+                  </div>
+                  <p className="text-[11px] text-gray-400 mt-2">
+                    The courier rate is used when available, otherwise these
+                    values. Cash on Delivery is not available for international
+                    orders. International shipments are created from the
+                    Shiprocket panel because customs documents are needed.
+                  </p>
+                </div>
+              )}
+
+              {/* Dispatch time */}
               <div className="border border-blue-100 rounded-lg p-3">
                 <p className="text-sm font-semibold text-gray-700 mb-2">
                   <i className="pi pi-box text-blue-600 mr-1.5"></i>
                   Order preparation
                 </p>
                 <div className="sm:w-1/2">
-                  <DaysField
-                    label="Dispatch time"
-                    hint="Days you need to pack and hand over an order. Added to every estimate"
-                    value={form.handlingDays}
-                    onChange={(v) => setField("handlingDays", v)}
-                    error={errors.handlingDays}
+                  <label className="text-sm font-semibold text-gray-700 block mb-1">
+                    Dispatch time
+                  </label>
+                  <DurationInput
+                    value={form.handlingValue}
+                    unit={form.handlingUnit}
+                    onValue={(v) => setField("handlingValue", v)}
+                    onUnit={(u) => setField("handlingUnit", u)}
+                    error={errors.handlingValue}
                   />
+                  <small className="text-gray-400 block mt-1">
+                    Time you need to pack and hand over an order. Added to every
+                    delivery time. Use minutes or hours for quick local delivery.
+                  </small>
                 </div>
               </div>
 
@@ -797,7 +1235,7 @@ function DeliveryPage() {
                     <span>
                       <i className="pi pi-check-circle text-green-600 mr-1.5"></i>
                       Delivery is set up
-                      {coverCount !== null && needsLocal && (
+                      {coverCount !== null && form.local && (
                         <b className="text-blue-700">
                           {" "}
                           • covers {coverCount} pincode
@@ -808,7 +1246,7 @@ function DeliveryPage() {
                   ) : (
                     <span className="text-amber-700">
                       <i className="pi pi-info-circle mr-1.5"></i>
-                      Not set up yet. Customers will not see delivery estimates
+                      Not set up yet. Customers will not see delivery details
                     </span>
                   )}
                 </div>
@@ -835,7 +1273,6 @@ function DeliveryPage() {
 
             {/* ---------------- RIGHT: preview + test ---------------- */}
             <div className="space-y-3 self-start">
-              {/* Customer preview */}
               <div className="border border-blue-100 rounded-lg overflow-hidden text-sm">
                 <div className="bg-blue-50 px-3 py-2">
                   <p className="font-semibold text-blue-800">
@@ -843,110 +1280,171 @@ function DeliveryPage() {
                     What customers see
                   </p>
                 </div>
-                <div className="p-3 space-y-2">
-                  {needsLocal && (
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="text-gray-700 font-medium">
-                          Within {form.radiusKm ?? "—"} km
-                        </p>
-                        <p className="text-xs text-gray-400">Local delivery</p>
+                <div className="p-3 space-y-2.5">
+                  {form.local &&
+                    slabPreview.map((s) => (
+                      <div
+                        key={s.id}
+                        className="flex items-start justify-between gap-2"
+                      >
+                        <div>
+                          <p className="text-gray-700 font-medium">
+                            Up to {s.upToKm} km
+                          </p>
+                          <p className="text-xs text-gray-400">{s.label}</p>
+                        </div>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap ${
+                            s.charge === 0
+                              ? "bg-green-100 text-green-800"
+                              : "bg-gray-100 text-gray-700"
+                          }`}
+                        >
+                          {inr(s.charge)}
+                        </span>
                       </div>
-                      <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800 whitespace-nowrap">
-                        {localLabel}
-                        {form.localDeliveryCharge
-                          ? ` • ₹${form.localDeliveryCharge}`
-                          : " • Free"}
-                      </span>
-                    </div>
-                  )}
-                  {needsNational && (
+                    ))}
+
+                  {form.outside && (
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <p className="text-gray-700 font-medium">
-                          {needsLocal ? "Everywhere else" : "All over India"}
+                          {form.local ? "Outside my radius" : "All over India"}
                         </p>
-                        <p className="text-xs text-gray-400">Courier</p>
+                        <p className="text-xs text-gray-400">
+                          Courier • {nationalLabel}
+                        </p>
                       </div>
                       <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 whitespace-nowrap">
-                        {nationalLabel} • + courier charge
+                        Courier rate
                       </span>
                     </div>
                   )}
-                  {!needsNational && (
+
+                  {form.outside && form.allowInternational && (
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-gray-700 font-medium">Other countries</p>
+                        <p className="text-xs text-gray-400">
+                          Courier • {intlLabel}
+                        </p>
+                      </div>
+                      <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 whitespace-nowrap">
+                        Courier rate
+                      </span>
+                    </div>
+                  )}
+
+                  {!form.outside && (
                     <div className="flex items-start justify-between gap-2">
                       <p className="text-gray-700 font-medium">
-                        Outside your radius
+                        Outside my radius
                       </p>
                       <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700 whitespace-nowrap">
-                        Not deliverable
+                        Cannot order
                       </span>
+                    </div>
+                  )}
+
+                  {rulePreview.length > 0 && (
+                    <div className="border-t border-gray-100 pt-2 space-y-1">
+                      {rulePreview.map((r) => (
+                        <p key={r.id} className="text-xs text-gray-600">
+                          <i className="pi pi-tag mr-1 text-blue-500"></i>
+                          Orders of ₹{r.minOrderValue}+ : delivery{" "}
+                          <b>{inr(r.charge ?? 0)}</b>
+                        </p>
+                      ))}
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Test a pincode */}
               <div className="border border-blue-100 rounded-lg overflow-hidden text-sm">
                 <div className="bg-blue-50 px-3 py-2">
                   <p className="font-semibold text-blue-800">
                     <i className="pi pi-search mr-1.5"></i>
-                    Test a customer pincode
+                    Test a customer address
                   </p>
                 </div>
                 <div className="p-3 space-y-2">
                   {!saved ? (
                     <p className="text-xs text-gray-500">
-                      Save your delivery settings first to test a pincode.
+                      Save your delivery settings first to test an address.
                     </p>
                   ) : (
                     <>
+                      <InputText
+                        value={testCountry}
+                        onChange={(e) => setTestCountry(e.target.value)}
+                        placeholder="Country (default India)"
+                        className="p-inputtext-sm w-full"
+                      />
                       <div className="flex gap-2">
                         <InputText
                           value={testPin}
                           onChange={(e) =>
                             setTestPin(
-                              e.target.value.replace(/\D/g, "").slice(0, 6),
+                              testIsIndia
+                                ? e.target.value.replace(/\D/g, "").slice(0, 6)
+                                : e.target.value.slice(0, 12),
                             )
                           }
                           onKeyDown={(e) => {
                             if (e.key === "Enter") runTest();
                           }}
-                          inputMode="numeric"
-                          maxLength={6}
-                          placeholder="Customer pincode"
+                          placeholder={testIsIndia ? "Pincode" : "Postal code"}
                           className="p-inputtext-sm w-full"
                         />
                         <Button
                           icon="pi pi-check"
                           loading={testing}
                           onClick={runTest}
-                          disabled={testPin.length !== 6}
+                          disabled={testPin.trim().length < 3}
                         />
                       </div>
+                      <InputNumber
+                        value={testValue}
+                        onValueChange={(e) => setTestValue(e.value ?? null)}
+                        mode="currency"
+                        currency="INR"
+                        locale="en-IN"
+                        min={0}
+                        placeholder="Order value (optional)"
+                        className="w-full"
+                        inputClassName="w-full p-inputtext-sm"
+                      />
 
                       {testResult && testResult.deliverable && (
                         <div className="text-xs bg-green-50 border border-green-200 text-green-800 rounded-md p-2 space-y-0.5">
                           {testResult.delivery ? (
                             <>
                               <p className="font-semibold">
-                                {formatDaysLabel(
-                                  testResult.delivery.minDays,
-                                  testResult.delivery.maxDays,
-                                )}
+                                {getEtaLabel(testResult.delivery)}
                               </p>
                               <p>
-                                {testResult.delivery.mode === "LOCAL"
-                                  ? "Local delivery"
-                                  : "Courier delivery"}
-                                {testResult.delivery.distanceKm !== null &&
-                                testResult.delivery.distanceKm !== undefined
-                                  ? ` • about ${testResult.delivery.distanceKm} km away`
-                                  : ""}
+                                Shipping:{" "}
+                                <b>{inr(testResult.delivery.shippingCharge ?? 0)}</b>
+                                {testResult.delivery.baseShippingCharge !==
+                                  undefined &&
+                                  testResult.delivery.baseShippingCharge !== null &&
+                                  testResult.delivery.baseShippingCharge !==
+                                    testResult.delivery.shippingCharge && (
+                                    <span className="line-through text-green-600 ml-1.5">
+                                      {inr(testResult.delivery.baseShippingCharge)}
+                                    </span>
+                                  )}
                               </p>
+                              {testResult.delivery.shippingNote && (
+                                <p>{testResult.delivery.shippingNote}</p>
+                              )}
                               <p>
                                 Expected by{" "}
-                                {formatEstimateRange(testResult.delivery)}
+                                {(testResult.delivery.maxMinutes ?? 99999) < 1440
+                                  ? formatEstimateAt(
+                                      testResult.delivery.estimatedMaxAt,
+                                    ) || formatEstimateRange(testResult.delivery)
+                                  : formatEstimateRange(testResult.delivery)}
                               </p>
                             </>
                           ) : (
@@ -968,18 +1466,9 @@ function DeliveryPage() {
 
               <div className="border border-gray-200 bg-gray-50 rounded-lg p-3 text-xs text-gray-600 space-y-1">
                 <p className="font-semibold text-gray-700">How it works</p>
-                <p>
-                  • The customer&apos;s pincode comes from their delivery
-                  address.
-                </p>
-                <p>
-                  • Inside your radius, the local delivery time is used.
-                  Otherwise, the national time applies (if enabled).
-                </p>
-                <p>
-                  • Orders to pincodes you do not deliver to are blocked at
-                  checkout.
-                </p>
+                <p>• The delivery charge is shown to the customer and added to the order total at payment.</p>
+                <p>• Inside your radius the matching distance slab is used. Outside it, the courier rate is used (if enabled).</p>
+                <p>• Order value rules can lower or remove the charge for bigger orders.</p>
               </div>
             </div>
           </div>

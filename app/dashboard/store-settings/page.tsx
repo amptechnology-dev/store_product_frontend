@@ -11,16 +11,63 @@ import {
   updateStoreSettings,
 } from "@/service/storeSetting.service";
 
-type SettingKey = "hasStockManagement" | "hasDelivery" | "paymentFirst";
-type Settings = Record<SettingKey, boolean>;
+type PaymentMode = "BOTH" | "ONLINE_ONLY" | "OFF";
+type ToggleKey = "hasStockManagement" | "hasDelivery";
+type Settings = {
+  hasStockManagement: boolean;
+  hasDelivery: boolean;
+  paymentMode: PaymentMode;
+};
 
 const DEFAULT_SETTINGS: Settings = {
   hasStockManagement: false,
   hasDelivery: true,
-  paymentFirst: false,
+  paymentMode: "BOTH",
 };
 
-// ---------- ek ta setting er card (toggle + ON / OFF byakkha) ----------
+const PAYMENT_OPTIONS: {
+  value: PaymentMode;
+  title: string;
+  icon: string;
+  desc: string;
+  points: string[];
+}[] = [
+  {
+    value: "BOTH",
+    title: "Online + Cash on Delivery",
+    icon: "pi-wallet",
+    desc: "Customers choose how to pay",
+    points: [
+      "Customers can pay online or pay on delivery",
+      "Online orders are confirmed after the payment is received",
+      "Payments and Settlements are available in your menu",
+    ],
+  },
+  {
+    value: "ONLINE_ONLY",
+    title: "Online payment only",
+    icon: "pi-credit-card",
+    desc: "Customers pay first, then you process the order",
+    points: [
+      "Cash on Delivery is hidden",
+      "You can confirm an order only after the payment is received",
+      "Unpaid orders are cancelled automatically after the time limit",
+    ],
+  },
+  {
+    value: "OFF",
+    title: "Payment off",
+    icon: "pi-ban",
+    desc: "No payment inside the app. You handle money yourself",
+    points: [
+      "Customers are not asked to pay in the app",
+      "Payments and Settlements are removed from your menu",
+      "Orders are not counted in payment reports",
+    ],
+  },
+];
+
+// ---------- ON / OFF toggle card ----------
 function SettingCard({
   icon,
   title,
@@ -29,9 +76,7 @@ function SettingCard({
   saving,
   disabled,
   onChange,
-  onTitle = "When ON",
   onItems,
-  offTitle = "When OFF",
   offItems,
   note,
 }: {
@@ -42,9 +87,7 @@ function SettingCard({
   saving: boolean;
   disabled: boolean;
   onChange: (value: boolean) => void;
-  onTitle?: string;
   onItems: string[];
-  offTitle?: string;
   offItems: string[];
   note?: string;
 }) {
@@ -91,7 +134,7 @@ function SettingCard({
           }`}
         >
           <p className="text-xs font-semibold text-green-700 flex items-center gap-1.5 mb-1.5">
-            <i className="pi pi-check-circle"></i> {onTitle}
+            <i className="pi pi-check-circle"></i> When ON
           </p>
           <ul className="text-xs text-gray-600 space-y-1 list-disc pl-4 leading-relaxed">
             {onItems.map((t) => (
@@ -106,7 +149,7 @@ function SettingCard({
           }`}
         >
           <p className="text-xs font-semibold text-gray-700 flex items-center gap-1.5 mb-1.5">
-            <i className="pi pi-times-circle"></i> {offTitle}
+            <i className="pi pi-times-circle"></i> When OFF
           </p>
           <ul className="text-xs text-gray-600 space-y-1 list-disc pl-4 leading-relaxed">
             {offItems.map((t) => (
@@ -133,7 +176,7 @@ function StoreSettingsPage() {
   const [storeId, setStoreId] = useState<string | null>(null);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(false);
-  const [savingKey, setSavingKey] = useState<SettingKey | null>(null);
+  const [savingKey, setSavingKey] = useState<string | null>(null);
 
   useEffect(() => {
     fetchStores();
@@ -162,7 +205,9 @@ function StoreSettingsPage() {
       setSettings({
         hasStockManagement: !!s.hasStockManagement,
         hasDelivery: s.hasDelivery !== false,
-        paymentFirst: s.paymentFirst === true,
+        paymentMode: (["BOTH", "ONLINE_ONLY", "OFF"].includes(s.paymentMode)
+          ? s.paymentMode
+          : "BOTH") as PaymentMode,
       });
     } catch (err: any) {
       toast.error(err?.response?.data?.message || "Failed to fetch settings");
@@ -172,18 +217,19 @@ function StoreSettingsPage() {
     }
   };
 
-  const handleToggle = async (key: SettingKey, value: boolean) => {
+  // ek ta setting save (optimistic, fail hole ager obosthay)
+  const save = async (key: keyof Settings, value: any) => {
     if (!storeId) return;
     const prev = settings[key];
-    setSettings((s) => ({ ...s, [key]: value })); // optimistic update
+    setSettings((s) => ({ ...s, [key]: value }));
     try {
       setSavingKey(key);
       await updateStoreSettings(storeId, { [key]: value } as any);
       toast.success("Settings updated successfully");
-      // sidebar er "Stock Management" / "Delivery" menu refresh korar jonno
+      // sidebar er menu (Stock / Delivery / Payments / Settlements) refresh korar jonno
       window.dispatchEvent(new Event("storeSettingsChanged"));
     } catch (err: any) {
-      setSettings((s) => ({ ...s, [key]: prev })); // revert on failure
+      setSettings((s) => ({ ...s, [key]: prev }));
       if (axios.isAxiosError(err)) {
         toast.error(err.response?.data?.message || "Failed to update settings");
       } else {
@@ -212,7 +258,7 @@ function StoreSettingsPage() {
               Store Settings
             </h2>
             <p className="text-xs text-blue-100">
-              Control stock, delivery and payment behavior for your store
+              Control payment, delivery and stock behavior for your store
             </p>
           </div>
         </div>
@@ -244,25 +290,72 @@ function StoreSettingsPage() {
             </div>
           ) : (
             <>
-              {/* Payment first */}
-              <SettingCard
-                icon="pi-credit-card"
-                title="Payment First (online payment only)"
-                subtitle="Customers pay online before you process the order"
-                checked={settings.paymentFirst}
-                saving={savingKey === "paymentFirst"}
-                disabled={busy}
-                onChange={(v) => handleToggle("paymentFirst", v)}
-                onItems={[
-                  "Cash on Delivery is hidden. Customers can only pay online",
-                  "You can confirm an order only after the payment is received",
-                  "Unpaid online orders are cancelled automatically after the payment time limit",
-                ]}
-                offItems={[
-                  "Customers can choose Cash on Delivery or Online payment",
-                  "Cash on Delivery orders are paid when the order is delivered",
-                ]}
-              />
+              {/* Payment options */}
+              <div className="rounded-xl border border-blue-100 overflow-hidden">
+                <div className="flex items-center justify-between gap-3 p-3 sm:p-4 bg-blue-50/50">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+                      <i className="pi pi-credit-card text-blue-600 text-lg"></i>
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800">
+                        Payment options
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Choose how customers pay for orders from your store
+                      </p>
+                    </div>
+                  </div>
+                  {savingKey === "paymentMode" && (
+                    <i className="pi pi-spin pi-spinner text-blue-500 text-sm"></i>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 sm:p-4 bg-white">
+                  {PAYMENT_OPTIONS.map((opt) => {
+                    const active = settings.paymentMode === opt.value;
+                    return (
+                      <button
+                        type="button"
+                        key={opt.value}
+                        disabled={busy}
+                        onClick={() => {
+                          if (!active) save("paymentMode", opt.value);
+                        }}
+                        className={`text-left rounded-lg border p-3 transition-all disabled:opacity-60 ${
+                          active
+                            ? "border-blue-500 bg-blue-50"
+                            : "border-gray-200 hover:bg-gray-50"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <i
+                            className={`pi ${opt.icon} ${
+                              active ? "text-blue-600" : "text-gray-400"
+                            }`}
+                          />
+                          <span
+                            className={`text-sm font-semibold ${
+                              active ? "text-blue-800" : "text-gray-700"
+                            }`}
+                          >
+                            {opt.title}
+                          </span>
+                          {active && (
+                            <i className="pi pi-check-circle text-blue-600 ml-auto" />
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">{opt.desc}</p>
+                        <ul className="text-xs text-gray-600 space-y-1 list-disc pl-4 leading-relaxed mt-2">
+                          {opt.points.map((t) => (
+                            <li key={t}>{t}</li>
+                          ))}
+                        </ul>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
               {/* Delivery */}
               <SettingCard
@@ -272,9 +365,9 @@ function StoreSettingsPage() {
                 checked={settings.hasDelivery}
                 saving={savingKey === "hasDelivery"}
                 disabled={busy}
-                onChange={(v) => handleToggle("hasDelivery", v)}
+                onChange={(v) => save("hasDelivery", v)}
                 onItems={[
-                  "Customers see the delivery time for their pincode",
+                  "Customers see the delivery time for their address",
                   "Shipping charge is added to the order total at payment",
                   "Set your delivery area, time and charges from the Delivery menu",
                 ]}
@@ -295,7 +388,7 @@ function StoreSettingsPage() {
                 checked={settings.hasStockManagement}
                 saving={savingKey === "hasStockManagement"}
                 disabled={busy}
-                onChange={(v) => handleToggle("hasStockManagement", v)}
+                onChange={(v) => save("hasStockManagement", v)}
                 onItems={[
                   "Opening Stock and Low Stock Alert fields are shown on products and variants",
                   "Stock is validated at cart and order",

@@ -163,6 +163,7 @@ export type OrderRow = {
   cancelledBy?: "USER" | "STORE" | null;
   createdAt: string;
   updatedAt: string;
+  paymentOff?: boolean;
 };
 
 export const ORDER_STATUSES: OrderStatus[] = [

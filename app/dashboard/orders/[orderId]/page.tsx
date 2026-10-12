@@ -34,7 +34,7 @@ import DeliveryDateDialog, {
   formatDeliveryDate,
 } from "@/components/orders/DeliveryDateDialog";
 // [DELIVERY] order place er somoy er estimate dekhano
-import { formatEstimateRange, formatDaysLabel } from "@/helper/delivery";
+import { formatEstimateRange, getEtaLabel } from "@/helper/delivery";
 import ShipmentCard from "@/components/orders/ShipmentCard";
 
 const WORKER_ENDPOINT = "/api/worker/all-workers";
@@ -887,10 +887,14 @@ function OrderDetailsPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
-            <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/20 text-white">
-              {order.paymentMethod === "ONLINE" ? "ONLINE" : "COD"}
-            </span>
-            <PaymentBadge status={order.paymentStatus} />
+            {!order.paymentOff && (
+              <>
+                <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/20 text-white">
+                  {order.paymentMethod === "ONLINE" ? "ONLINE" : "COD"}
+                </span>
+                <PaymentBadge status={order.paymentStatus} />
+              </>
+            )}
             <span
               className={`px-3 py-1 rounded-full text-xs font-semibold ${STATUS_STYLES[order.status]}`}
             >
@@ -1227,7 +1231,7 @@ function OrderDetailsPage() {
           <div className="space-y-3 self-start">
             <PriceSummary order={order} />
 
-            <PaymentCard order={order} />
+            {!order.paymentOff && <PaymentCard order={order} />}
 
             <ShipmentCard
               order={order}
@@ -1276,23 +1280,38 @@ function OrderDetailsPage() {
                       Estimate shown to customer
                     </p>
                     <p className="text-blue-700 font-medium">
-                      {formatDaysLabel(
-                        deliveryInfo.minDays,
-                        deliveryInfo.maxDays,
-                      )}
+                      {getEtaLabel(deliveryInfo)}
                       {" • "}
                       {formatEstimateRange(deliveryInfo)}
                     </p>
                     <p className="text-gray-500">
                       {deliveryInfo.mode === "LOCAL"
-                        ? "Local delivery"
-                        : "Courier delivery"}
+                        ? "Own delivery"
+                        : deliveryInfo.mode === "INTERNATIONAL"
+                          ? "International courier"
+                          : "Courier delivery"}
                       {deliveryInfo.mode === "LOCAL" &&
                       deliveryInfo.distanceKm !== null &&
                       deliveryInfo.distanceKm !== undefined
                         ? ` • about ${deliveryInfo.distanceKm} km from your store`
                         : ""}
                     </p>
+                    {deliveryInfo.shippingNote && (
+                      <p className="text-gray-500">
+                        {deliveryInfo.shippingNote}
+                      </p>
+                    )}
+                    {deliveryInfo.shippingCharge !== null &&
+                      deliveryInfo.shippingCharge !== undefined && (
+                        <p className="text-gray-600">
+                          Shipping charged to customer:{" "}
+                          <b>
+                            {Number(deliveryInfo.shippingCharge) === 0
+                              ? "Free"
+                              : money(deliveryInfo.shippingCharge)}
+                          </b>
+                        </p>
+                      )}
                   </div>
                 )}
               </div>
