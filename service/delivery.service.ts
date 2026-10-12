@@ -14,6 +14,8 @@ export type DeliverySettings = {
   nationalMaxDays: number;
   handlingDays: number;
   isActive: boolean;
+  localDeliveryCharge?: number;
+  nationalFallbackCharge?: number;
 };
 
 export type SaveDeliveryPayload = {
@@ -25,6 +27,8 @@ export type SaveDeliveryPayload = {
   nationalMinDays?: number;
   nationalMaxDays?: number;
   handlingDays?: number;
+  localDeliveryCharge?: number;
+  nationalFallbackCharge?: number;
 };
 
 export type PincodeInfo = {

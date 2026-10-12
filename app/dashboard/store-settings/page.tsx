@@ -11,13 +11,129 @@ import {
   updateStoreSettings,
 } from "@/service/storeSetting.service";
 
+type SettingKey = "hasStockManagement" | "hasDelivery" | "paymentFirst";
+type Settings = Record<SettingKey, boolean>;
+
+const DEFAULT_SETTINGS: Settings = {
+  hasStockManagement: false,
+  hasDelivery: true,
+  paymentFirst: false,
+};
+
+// ---------- ek ta setting er card (toggle + ON / OFF byakkha) ----------
+function SettingCard({
+  icon,
+  title,
+  subtitle,
+  checked,
+  saving,
+  disabled,
+  onChange,
+  onTitle = "When ON",
+  onItems,
+  offTitle = "When OFF",
+  offItems,
+  note,
+}: {
+  icon: string;
+  title: string;
+  subtitle: string;
+  checked: boolean;
+  saving: boolean;
+  disabled: boolean;
+  onChange: (value: boolean) => void;
+  onTitle?: string;
+  onItems: string[];
+  offTitle?: string;
+  offItems: string[];
+  note?: string;
+}) {
+  return (
+    <div className="rounded-xl border border-blue-100 overflow-hidden">
+      <div className="flex items-center justify-between gap-4 p-3 sm:p-4 bg-blue-50/50">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+            <i className={`pi ${icon} text-blue-600 text-lg`}></i>
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-sm font-semibold text-gray-800">{title}</p>
+              <span
+                className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                  checked
+                    ? "bg-green-100 text-green-800"
+                    : "bg-gray-200 text-gray-600"
+                }`}
+              >
+                {checked ? "ON" : "OFF"}
+              </span>
+            </div>
+            <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {saving && (
+            <i className="pi pi-spin pi-spinner text-blue-500 text-sm"></i>
+          )}
+          <InputSwitch
+            checked={checked}
+            onChange={(e) => onChange(!!e.value)}
+            disabled={disabled}
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 sm:p-4 bg-white">
+        <div
+          className={`rounded-lg border p-3 transition-all ${
+            checked ? "border-green-300 bg-green-50" : "border-gray-200 bg-white"
+          }`}
+        >
+          <p className="text-xs font-semibold text-green-700 flex items-center gap-1.5 mb-1.5">
+            <i className="pi pi-check-circle"></i> {onTitle}
+          </p>
+          <ul className="text-xs text-gray-600 space-y-1 list-disc pl-4 leading-relaxed">
+            {onItems.map((t) => (
+              <li key={t}>{t}</li>
+            ))}
+          </ul>
+        </div>
+
+        <div
+          className={`rounded-lg border p-3 transition-all ${
+            !checked ? "border-gray-400 bg-gray-50" : "border-gray-200 bg-white"
+          }`}
+        >
+          <p className="text-xs font-semibold text-gray-700 flex items-center gap-1.5 mb-1.5">
+            <i className="pi pi-times-circle"></i> {offTitle}
+          </p>
+          <ul className="text-xs text-gray-600 space-y-1 list-disc pl-4 leading-relaxed">
+            {offItems.map((t) => (
+              <li key={t}>{t}</li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      {note && (
+        <div className="px-3 sm:px-4 pb-3 sm:pb-4 bg-white">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800 flex gap-3">
+            <i className="pi pi-info-circle mt-0.5 flex-shrink-0"></i>
+            <span className="leading-relaxed">{note}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StoreSettingsPage() {
   const [stores, setStores] = useState<any[]>([]);
   const [storeId, setStoreId] = useState<string | null>(null);
-  // [STOCK] shudhu stock management
-  const [stockEnabled, setStockEnabled] = useState(false);
+  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [savingKey, setSavingKey] = useState<SettingKey | null>(null);
 
   useEffect(() => {
     fetchStores();
@@ -42,36 +158,43 @@ function StoreSettingsPage() {
     try {
       setLoading(true);
       const res = await getStoreSettings(id);
-      setStockEnabled(!!res.data?.settings?.hasStockManagement);
+      const s = res.data?.settings || {};
+      setSettings({
+        hasStockManagement: !!s.hasStockManagement,
+        hasDelivery: s.hasDelivery !== false,
+        paymentFirst: s.paymentFirst === true,
+      });
     } catch (err: any) {
       toast.error(err?.response?.data?.message || "Failed to fetch settings");
-      setStockEnabled(false);
+      setSettings(DEFAULT_SETTINGS);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleToggle = async (value: boolean) => {
+  const handleToggle = async (key: SettingKey, value: boolean) => {
     if (!storeId) return;
-    const prev = stockEnabled;
-    setStockEnabled(value); // optimistic update
+    const prev = settings[key];
+    setSettings((s) => ({ ...s, [key]: value })); // optimistic update
     try {
-      setSaving(true);
-      await updateStoreSettings(storeId, { hasStockManagement: value });
+      setSavingKey(key);
+      await updateStoreSettings(storeId, { [key]: value } as any);
       toast.success("Settings updated successfully");
-      // [STOCK] sidebar er "Stock Management" menu refresh korar jonno
+      // sidebar er "Stock Management" / "Delivery" menu refresh korar jonno
       window.dispatchEvent(new Event("storeSettingsChanged"));
     } catch (err: any) {
-      setStockEnabled(prev); // revert on failure
+      setSettings((s) => ({ ...s, [key]: prev })); // revert on failure
       if (axios.isAxiosError(err)) {
         toast.error(err.response?.data?.message || "Failed to update settings");
       } else {
         toast.error("Failed to update settings");
       }
     } finally {
-      setSaving(false);
+      setSavingKey(null);
     }
   };
+
+  const busy = savingKey !== null || !storeId;
 
   return (
     <div className="w-full flex justify-start items-start pt-2">
@@ -89,7 +212,7 @@ function StoreSettingsPage() {
               Store Settings
             </h2>
             <p className="text-xs text-blue-100">
-              Control stock behavior for your products
+              Control stock, delivery and payment behavior for your store
             </p>
           </div>
         </div>
@@ -121,96 +244,70 @@ function StoreSettingsPage() {
             </div>
           ) : (
             <>
-              {/* Toggle card */}
-              <div className="rounded-xl border border-blue-100 overflow-hidden">
-                <div className="flex items-center justify-between gap-4 p-3 sm:p-4 bg-blue-50/50">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
-                      <i className="pi pi-box text-blue-600 text-lg"></i>
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-semibold text-gray-800">
-                          Stock Management
-                        </p>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
-                            stockEnabled
-                              ? "bg-green-100 text-green-800"
-                              : "bg-gray-200 text-gray-600"
-                          }`}
-                        >
-                          {stockEnabled ? "ON" : "OFF"}
-                        </span>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        Track stock for products and variants
-                      </p>
-                    </div>
-                  </div>
+              {/* Payment first */}
+              <SettingCard
+                icon="pi-credit-card"
+                title="Payment First (online payment only)"
+                subtitle="Customers pay online before you process the order"
+                checked={settings.paymentFirst}
+                saving={savingKey === "paymentFirst"}
+                disabled={busy}
+                onChange={(v) => handleToggle("paymentFirst", v)}
+                onItems={[
+                  "Cash on Delivery is hidden. Customers can only pay online",
+                  "You can confirm an order only after the payment is received",
+                  "Unpaid online orders are cancelled automatically after the payment time limit",
+                ]}
+                offItems={[
+                  "Customers can choose Cash on Delivery or Online payment",
+                  "Cash on Delivery orders are paid when the order is delivered",
+                ]}
+              />
 
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {saving && (
-                      <i className="pi pi-spin pi-spinner text-blue-500 text-sm"></i>
-                    )}
-                    <InputSwitch
-                      checked={stockEnabled}
-                      onChange={(e) => handleToggle(!!e.value)}
-                      disabled={saving || !storeId}
-                    />
-                  </div>
-                </div>
+              {/* Delivery */}
+              <SettingCard
+                icon="pi-truck"
+                title="Delivery"
+                subtitle="Deliver to customers with delivery time and shipping charge"
+                checked={settings.hasDelivery}
+                saving={savingKey === "hasDelivery"}
+                disabled={busy}
+                onChange={(v) => handleToggle("hasDelivery", v)}
+                onItems={[
+                  "Customers see the delivery time for their pincode",
+                  "Shipping charge is added to the order total at payment",
+                  "Set your delivery area, time and charges from the Delivery menu",
+                ]}
+                offItems={[
+                  "No delivery time and no shipping charge for customers",
+                  "No pincode check at checkout",
+                  "No expected delivery date needed before marking an order as shipped",
+                  "Courier shipment options are hidden",
+                ]}
+                note="This applies to new orders. Orders already placed keep the delivery details they were created with."
+              />
 
-                {/* ON / OFF explanation */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 sm:p-4 bg-white">
-                  <div
-                    className={`rounded-lg border p-3 transition-all ${
-                      stockEnabled
-                        ? "border-green-300 bg-green-50"
-                        : "border-gray-200 bg-white"
-                    }`}
-                  >
-                    <p className="text-xs font-semibold text-green-700 flex items-center gap-1.5 mb-1.5">
-                      <i className="pi pi-check-circle"></i> When ON
-                    </p>
-                    <ul className="text-xs text-gray-600 space-y-1 list-disc pl-4 leading-relaxed">
-                      <li>
-                        Opening Stock and Low Stock Alert fields are shown on
-                        products and variants
-                      </li>
-                      <li>Stock is validated at cart and order</li>
-                      <li>Stock is reduced after each order</li>
-                    </ul>
-                  </div>
-
-                  <div
-                    className={`rounded-lg border p-3 transition-all ${
-                      !stockEnabled
-                        ? "border-gray-400 bg-gray-50"
-                        : "border-gray-200 bg-white"
-                    }`}
-                  >
-                    <p className="text-xs font-semibold text-gray-700 flex items-center gap-1.5 mb-1.5">
-                      <i className="pi pi-times-circle"></i> When OFF
-                    </p>
-                    <ul className="text-xs text-gray-600 space-y-1 list-disc pl-4 leading-relaxed">
-                      <li>Stock fields are hidden</li>
-                      <li>No stock validation at cart or order</li>
-                      <li>No stock deduction is applied</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-
-              {/* Info note */}
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800 flex gap-3">
-                <i className="pi pi-info-circle mt-0.5 flex-shrink-0"></i>
-                <span className="leading-relaxed">
-                  This setting is saved on each product when it is created.
-                  Changing it later will not affect products that were already
-                  created.
-                </span>
-              </div>
+              {/* Stock */}
+              <SettingCard
+                icon="pi-box"
+                title="Stock Management"
+                subtitle="Track stock for products and variants"
+                checked={settings.hasStockManagement}
+                saving={savingKey === "hasStockManagement"}
+                disabled={busy}
+                onChange={(v) => handleToggle("hasStockManagement", v)}
+                onItems={[
+                  "Opening Stock and Low Stock Alert fields are shown on products and variants",
+                  "Stock is validated at cart and order",
+                  "Stock is reduced after each order",
+                ]}
+                offItems={[
+                  "Stock fields are hidden",
+                  "No stock validation at cart or order",
+                  "No stock deduction is applied",
+                ]}
+                note="This setting is saved on each product when it is created. Changing it later will not affect products that were already created."
+              />
             </>
           )}
         </div>

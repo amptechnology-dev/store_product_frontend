@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { toast, ToastContainer } from "react-toastify";
 import axiosInstance from "@/service/axios.service";
 import { Button } from "primereact/button";
@@ -24,6 +30,7 @@ import {
   checkDelivery,
 } from "@/service/delivery.service";
 import { formatDaysLabel, formatEstimateRange } from "@/helper/delivery";
+import { getStoreSettings } from "@/service/storeSetting.service";
 
 type StoreOption = {
   _id: string;
@@ -39,6 +46,8 @@ type FormState = {
   nationalMinDays: number | null;
   nationalMaxDays: number | null;
   handlingDays: number | null;
+  localDeliveryCharge: number | null;
+  nationalFallbackCharge: number | null;
 };
 
 const DEFAULT_FORM: FormState = {
@@ -49,6 +58,8 @@ const DEFAULT_FORM: FormState = {
   nationalMinDays: 4,
   nationalMaxDays: 7,
   handlingDays: 1,
+  localDeliveryCharge: 0,
+  nationalFallbackCharge: 0,
 };
 
 const TYPE_OPTIONS: {
@@ -148,6 +159,7 @@ function DeliveryPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<DeliverySettings | null>(null);
+  const [deliveryOff, setDeliveryOff] = useState(false);
   const [coverCount, setCoverCount] = useState<number | null>(null);
 
   // store pincode lookup (area / district / state dekhano)
@@ -211,7 +223,11 @@ function DeliveryPage() {
   const loadSettings = useCallback(async (id: string) => {
     try {
       setLoading(true);
-      const res = await getDeliverySettings(id);
+      const [res, general] = await Promise.all([
+        getDeliverySettings(id),
+        getStoreSettings(id).catch(() => null),
+      ]);
+      setDeliveryOff(general?.data?.settings?.hasDelivery === false);
       const s: DeliverySettings | null = res.data?.settings || null;
 
       setSaved(s);
@@ -225,10 +241,13 @@ function DeliveryPage() {
           deliveryType: s.deliveryType,
           pincode: s.pincode,
           radiusKm: s.radiusKm ?? DEFAULT_FORM.radiusKm,
-          localDeliveryDays: s.localDeliveryDays ?? DEFAULT_FORM.localDeliveryDays,
+          localDeliveryDays:
+            s.localDeliveryDays ?? DEFAULT_FORM.localDeliveryDays,
           nationalMinDays: s.nationalMinDays ?? DEFAULT_FORM.nationalMinDays,
           nationalMaxDays: s.nationalMaxDays ?? DEFAULT_FORM.nationalMaxDays,
           handlingDays: s.handlingDays ?? DEFAULT_FORM.handlingDays,
+          localDeliveryCharge: s.localDeliveryCharge ?? 0,
+          nationalFallbackCharge: s.nationalFallbackCharge ?? 0,
         });
       } else {
         setForm(DEFAULT_FORM);
@@ -324,12 +343,17 @@ function DeliveryPage() {
       pincode: d.pincode,
       handlingDays: d.handlingDays ?? 1,
       ...(local
-        ? { radiusKm: d.radiusKm, localDeliveryDays: d.localDeliveryDays }
+        ? {
+            radiusKm: d.radiusKm,
+            localDeliveryDays: d.localDeliveryDays,
+            localDeliveryCharge: d.localDeliveryCharge ?? 0,
+          }
         : {}),
       ...(national
         ? {
             nationalMinDays: d.nationalMinDays,
             nationalMaxDays: d.nationalMaxDays,
+            nationalFallbackCharge: d.nationalFallbackCharge ?? 0,
           }
         : {}),
     };
@@ -500,6 +524,15 @@ function DeliveryPage() {
       <div className="w-full bg-white rounded-lg shadow p-2 sm:p-4 space-y-3">
         {header}
 
+        {deliveryOff && (
+          <div className="text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-md p-2.5">
+            <i className="pi pi-info-circle mr-1.5"></i>
+            Delivery is turned off for this store, so customers will not see
+            delivery time or shipping charge and these settings are ignored.
+            Turn it on from Store Settings.
+          </div>
+        )}
+
         {loading ? (
           <Spinner />
         ) : (
@@ -542,9 +575,7 @@ function DeliveryPage() {
                             <i className="pi pi-check-circle text-blue-600 ml-auto" />
                           )}
                         </div>
-                        <p className="text-xs text-gray-500 mt-1">
-                          {opt.desc}
-                        </p>
+                        <p className="text-xs text-gray-500 mt-1">{opt.desc}</p>
                       </button>
                     );
                   })}
@@ -654,6 +685,32 @@ function DeliveryPage() {
                       onChange={(v) => setField("localDeliveryDays", v)}
                       error={errors.localDeliveryDays}
                     />
+                    <div>
+                      <label className="text-sm font-semibold text-gray-700 block mb-1">
+                        Local delivery charge
+                      </label>
+                      <InputNumber
+                        value={form.localDeliveryCharge}
+                        onValueChange={(e) =>
+                          setField("localDeliveryCharge", e.value ?? null)
+                        }
+                        mode="currency"
+                        currency="INR"
+                        locale="en-IN"
+                        min={0}
+                        className="w-full"
+                        inputClassName={`w-full p-inputtext-sm ${
+                          errors.localDeliveryCharge ? "p-invalid" : ""
+                        }`}
+                      />
+                      {!errors.localDeliveryCharge && (
+                        <small className="text-gray-400 block mt-1">
+                          Added to the customer&apos;s total at payment. 0 =
+                          free
+                        </small>
+                      )}
+                      <FieldError msg={errors.localDeliveryCharge} />
+                    </div>
                   </div>
 
                   <p className="text-[11px] text-gray-400 mt-2">
@@ -686,10 +743,33 @@ function DeliveryPage() {
                       max={60}
                     />
                   </div>
-                  <p className="text-[11px] text-gray-400 mt-2">
-                    Courier handling and delivery charges are not part of this
-                    setting yet.
-                  </p>
+                  <div className="mt-3 sm:w-1/2">
+                    <label className="text-sm font-semibold text-gray-700 block mb-1">
+                      Backup courier charge
+                    </label>
+                    <InputNumber
+                      value={form.nationalFallbackCharge}
+                      onValueChange={(e) =>
+                        setField("nationalFallbackCharge", e.value ?? null)
+                      }
+                      mode="currency"
+                      currency="INR"
+                      locale="en-IN"
+                      min={0}
+                      className="w-full"
+                      inputClassName={`w-full p-inputtext-sm ${
+                        errors.nationalFallbackCharge ? "p-invalid" : ""
+                      }`}
+                    />
+                    {!errors.nationalFallbackCharge && (
+                      <small className="text-gray-400 block mt-1">
+                        The courier rate is added automatically at checkout.
+                        This flat charge is used only when courier rates are not
+                        available
+                      </small>
+                    )}
+                    <FieldError msg={errors.nationalFallbackCharge} />
+                  </div>
                 </div>
               )}
 
@@ -774,6 +854,9 @@ function DeliveryPage() {
                       </div>
                       <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800 whitespace-nowrap">
                         {localLabel}
+                        {form.localDeliveryCharge
+                          ? ` • ₹${form.localDeliveryCharge}`
+                          : " • Free"}
                       </span>
                     </div>
                   )}
@@ -786,7 +869,7 @@ function DeliveryPage() {
                         <p className="text-xs text-gray-400">Courier</p>
                       </div>
                       <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 whitespace-nowrap">
-                        {nationalLabel}
+                        {nationalLabel} • + courier charge
                       </span>
                     </div>
                   )}
@@ -886,7 +969,8 @@ function DeliveryPage() {
               <div className="border border-gray-200 bg-gray-50 rounded-lg p-3 text-xs text-gray-600 space-y-1">
                 <p className="font-semibold text-gray-700">How it works</p>
                 <p>
-                  • The customer&apos;s pincode comes from their delivery address.
+                  • The customer&apos;s pincode comes from their delivery
+                  address.
                 </p>
                 <p>
                   • Inside your radius, the local delivery time is used.

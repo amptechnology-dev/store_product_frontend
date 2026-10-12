@@ -3,7 +3,7 @@ import axiosInstance from "@/service/axios.service";
 export type StoreSettings = {
   hasVariants: boolean;
   hasColor: boolean;
-  hasStockManagement: boolean;
+  hasStockManagement?: boolean; hasDelivery?: boolean; paymentFirst?: boolean
 };
 
 export const getStoreSettings = (storeId: string) =>

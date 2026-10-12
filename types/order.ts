@@ -141,6 +141,9 @@ export type OrderRow = {
   expectedDeliveryDate?: string | null;
   deliveryInfo?: DeliveryInfo | null;
   shipment?: OrderShipment | null;
+  shippingCharge?: number;
+  itemsTotal?: number | null;
+  deliveryEnabled?: boolean;
 
   // ---------- payment ----------
   paymentMethod: PaymentMethod;

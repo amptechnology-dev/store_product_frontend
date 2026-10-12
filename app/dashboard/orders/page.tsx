@@ -81,9 +81,11 @@ const QuoteBadge = ({ order }: { order: OrderRow }) => {
 
 // price estimate pending thakle CONFIRMED option hide
 const availableStatuses = (order: OrderRow): OrderStatus[] =>
-  getNextStatuses(order.status).filter(
-    (s) => !(s === "CONFIRMED" && isQuotePending(order)),
-  );
+  getNextStatuses(order.status).filter((s) => {
+    if (s === "CONFIRMED" && isQuotePending(order)) return false;
+    if (s === "CANCELLED" && order.paymentStatus === "PAID") return false;
+    return true;
+  });
 
 // status response e userId string ashle purono populated customer rekhe dao
 const mergeOrder = (prev: OrderRow, incoming: any): OrderRow => {
@@ -103,20 +105,18 @@ const DELIVERY_DATE_EDITABLE: OrderStatus[] = [
 
 // [DELIVERY] store date set kora thakle seta, nahole order er somoy dekhano estimate
 const deliveryCell = (row: OrderRow) => {
+  // [DELIVERY] delivery off store er order e delivery timing nei
+  if (row.deliveryEnabled === false) return "-";
+
   if (row.expectedDeliveryDate) {
     return formatDeliveryDate(row.expectedDeliveryDate);
   }
-  if (
-    DELIVERY_DATE_EDITABLE.includes(row.status) &&
-    row.deliveryInfo?.estimatedMinDate
-  ) {
-    return (
-      <span className="text-xs text-gray-500">
-        Est. {formatEstimateRange(row.deliveryInfo)}
-      </span>
-    );
-  }
-  return formatDeliveryDate(row.expectedDeliveryDate);
+
+  // NOTE: formatEstimateRange er signature check kore nao
+  const estimate = row.deliveryInfo
+    ? formatEstimateRange(row.deliveryInfo)
+    : "";
+  return estimate || "-";
 };
 
 // [GST] totalAmount ekhon GST soho, tai MRP er cheye beshi hole strikethrough dekhabo na
@@ -252,14 +252,18 @@ function OrdersPage() {
 
   const requestStatusChange = (order: OrderRow, newStatus: OrderStatus) => {
     if (newStatus === "CANCELLED") {
+      if (order.paymentStatus === "PAID") {
+        toast.error("Payment completed, order can no longer be cancelled");
+        return;
+      }
       setCancelNote("");
       setCancelError("");
       setCancelDialog({ visible: true, orderId: order._id });
       return;
     }
 
-    // SHIPPED korar age delivery date nite hobe
-    if (newStatus === "SHIPPED") {
+    // [DELIVERY] delivery off hole date lagbe na, shoja confirm dialog e jabe
+    if (newStatus === "SHIPPED" && order.deliveryEnabled !== false) {
       setDateDialog({ visible: true, order, mode: "ship" });
       return;
     }
@@ -408,7 +412,10 @@ function OrdersPage() {
       command: () => requestStatusChange(rowData, s),
     }));
 
-    if (DELIVERY_DATE_EDITABLE.includes(rowData.status)) {
+    if (
+      DELIVERY_DATE_EDITABLE.includes(rowData.status) &&
+      rowData.deliveryEnabled !== false
+    ) {
       items.unshift({
         label: rowData.expectedDeliveryDate
           ? "Edit delivery date"
@@ -574,10 +581,12 @@ function OrdersPage() {
                           <span className="font-medium">💳 Payment:</span>{" "}
                           {order.paymentMethod} ({order.paymentStatus})
                         </p>
-                        <p>
-                          <span className="font-medium">🚚 Delivery:</span>{" "}
-                          {deliveryCell(order)}
-                        </p>
+                        {order.deliveryEnabled !== false && (
+                          <p>
+                            <span className="font-medium">🚚 Delivery:</span>{" "}
+                            {deliveryCell(order)}
+                          </p>
+                        )}
                       </div>
 
                       <div className="flex justify-between items-center pt-1.5 border-t border-blue-100 mt-0.5">

@@ -49,6 +49,7 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
 
   // [STOCK] kono store er stock management on thakle-i Stock menu dekhabe
   const [stockEnabled, setStockEnabled] = useState(false);
+  const [deliveryEnabled, setDeliveryEnabled] = useState(true);
 
   const isActive = (href?: string) => {
     if (!href) return false;
@@ -68,13 +69,22 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
         const results = await Promise.all(
           stores.map((s: any) =>
             getStoreSettings(s._id)
-              .then((r) => !!r.data?.settings?.hasStockManagement)
-              .catch(() => false),
+              .then((r) => ({
+                stock: !!r.data?.settings?.hasStockManagement,
+                delivery: r.data?.settings?.hasDelivery !== false,
+              }))
+              .catch(() => ({ stock: false, delivery: true })),
           ),
         );
-        if (!cancelled) setStockEnabled(results.some(Boolean));
+        if (!cancelled) {
+          setStockEnabled(results.some((r) => r.stock));
+          setDeliveryEnabled(results.some((r) => r.delivery));
+        }
       } catch {
-        if (!cancelled) setStockEnabled(false);
+        if (!cancelled) {
+          setStockEnabled(false);
+          setDeliveryEnabled(true);
+        }
       }
     };
 
@@ -217,13 +227,15 @@ const Sidebar: React.FC<SidebarProps> = ({ role, user }) => {
                 icon: "pi-shopping-cart",
                 href: "/dashboard/orders",
               },
-              // [DELIVERY] STORE: delivery area (pincode / radius) + delivery time
-              {
-                label: "Delivery",
-                icon: "pi-truck",
-                href: "/dashboard/delivery",
-              },
-              // [PAYMENT] STORE: customer wise payment report
+              ...(deliveryEnabled
+                ? [
+                    {
+                      label: "Delivery",
+                      icon: "pi-truck",
+                      href: "/dashboard/delivery",
+                    },
+                  ]
+                : []),
               {
                 label: "Payments",
                 icon: "pi-wallet",

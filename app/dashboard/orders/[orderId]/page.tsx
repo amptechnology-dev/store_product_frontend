@@ -267,6 +267,13 @@ function PriceSummary({ order }: { order: OrderRow }) {
           </>
         )}
 
+        {Number(order.shippingCharge || 0) > 0 && (
+          <div className="flex justify-between text-gray-600">
+            <span>Shipping</span>
+            <span>{money(order.shippingCharge)}</span>
+          </div>
+        )}
+
         <div className="flex justify-between border-t border-dashed border-gray-200 pt-2 mt-2 font-semibold text-blue-800 text-base">
           <span>Total Amount</span>
           <span>{money(order.totalAmount)}</span>
@@ -404,9 +411,7 @@ function PaymentCard({ order }: { order: OrderRow }) {
                       {safeDate(a.completedAt || a.createdAt)}
                     </span>
                   </div>
-                  <p className="text-gray-500 mt-1 break-all">
-                    Txn: {a.txnid}
-                  </p>
+                  <p className="text-gray-500 mt-1 break-all">Txn: {a.txnid}</p>
                   <p className="text-gray-700">
                     {money(a.amount)}
                     {a.mode ? ` • ${a.mode}` : ""}
@@ -496,8 +501,8 @@ function QuotePanel({
           <div className="text-xs bg-red-50 border border-red-200 text-red-700 rounded-md p-2">
             Customer declined the last estimate
             {lastRejection.total ? ` (₹${lastRejection.total})` : ""}
-            {lastRejection.note ? ` — "${lastRejection.note}"` : ""}. Send a
-            new price.
+            {lastRejection.note ? ` — "${lastRejection.note}"` : ""}. Send a new
+            price.
           </div>
         )}
 
@@ -643,14 +648,18 @@ function OrderDetailsPage() {
     if (!order) return;
 
     if (newStatus === "CANCELLED") {
+      if (order.paymentStatus === "PAID") {
+        toast.error("Payment completed, order can no longer be cancelled");
+        return;
+      }
       setCancelNote("");
       setCancelError("");
       setCancelDialogVisible(true);
       return;
     }
 
-    // SHIPPED korar age delivery date nite hobe
-    if (newStatus === "SHIPPED") {
+    // [DELIVERY] delivery off hole date lagbe na
+    if (newStatus === "SHIPPED" && order.deliveryEnabled !== false) {
       setDateDialog({ visible: true, mode: "ship" });
       return;
     }
@@ -823,23 +832,22 @@ function OrderDetailsPage() {
 
   const isTerminal = TERMINAL_STATUSES.includes(order.status);
 
-  // price estimate user accept na kora porjonto CONFIRMED kora jabe na
-  const quotePending = isQuotePending(order);
-
-  // ONLINE order e payment PAID na hole CONFIRMED kora jabe na (backend o block kore)
-  const paymentPending = isPaymentPending(order);
-
-  const nextStatuses = getNextStatuses(order.status).filter(
-    (s) => !(s === "CONFIRMED" && (quotePending || paymentPending)),
-  );
-
-  const canEditDeliveryDate = ["PENDING", "CONFIRMED", "SHIPPED"].includes(
-    order.status,
-  );
-
   const isPaid = order.paymentStatus === "PAID";
 
-  // [DELIVERY] order place er somoy customer ke ja estimate dekhano hoyechilo
+  const quotePending = isQuotePending(order);
+
+  const paymentPending = isPaymentPending(order);
+
+  const nextStatuses = getNextStatuses(order.status).filter((s) => {
+    if (s === "CONFIRMED" && (quotePending || paymentPending)) return false;
+    if (s === "CANCELLED" && isPaid) return false;
+    return true;
+  });
+
+  const canEditDeliveryDate =
+    order.deliveryEnabled !== false &&
+    ["PENDING", "CONFIRMED", "SHIPPED"].includes(order.status);
+
   const deliveryInfo = order.deliveryInfo;
 
   return (
@@ -920,6 +928,13 @@ function OrderDetailsPage() {
             ))
           )}
         </div>
+
+        {isPaid && !isTerminal && (
+          <p className="text-xs text-green-700">
+            <i className="pi pi-lock mr-1"></i>
+            Payment has been received, so this order can no longer be cancelled.
+          </p>
+        )}
 
         {quotePending && order.status === "PENDING" && (
           <p className="text-xs text-amber-700">
@@ -1220,62 +1235,68 @@ function OrderDetailsPage() {
                 setOrder((prev) => (prev ? { ...prev, ...o } : prev))
               }
             />
+            {order.deliveryEnabled !== false && (
+              <div className="border border-blue-100 rounded-lg p-3 text-sm">
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="font-semibold text-gray-700">
+                    Expected Delivery
+                  </p>
+                  {canEditDeliveryDate && (
+                    <Button
+                      label={order.expectedDeliveryDate ? "Edit" : "Set date"}
+                      icon="pi pi-calendar"
+                      size="small"
+                      text
+                      onClick={() =>
+                        setDateDialog({ visible: true, mode: "edit" })
+                      }
+                    />
+                  )}
+                </div>
+                <p
+                  className={
+                    order.expectedDeliveryDate
+                      ? "text-gray-800 font-medium"
+                      : "text-gray-400"
+                  }
+                >
+                  <i className="pi pi-truck mr-1.5"></i>
+                  {formatDeliveryDate(order.expectedDeliveryDate)}
+                </p>
+                {!order.expectedDeliveryDate && canEditDeliveryDate && (
+                  <p className="text-[11px] text-gray-400 mt-1">
+                    Required before marking as Shipped
+                  </p>
+                )}
 
-            <div className="border border-blue-100 rounded-lg p-3 text-sm">
-              <div className="flex items-center justify-between mb-1.5">
-                <p className="font-semibold text-gray-700">Expected Delivery</p>
-                {canEditDeliveryDate && (
-                  <Button
-                    label={order.expectedDeliveryDate ? "Edit" : "Set date"}
-                    icon="pi pi-calendar"
-                    size="small"
-                    text
-                    onClick={() =>
-                      setDateDialog({ visible: true, mode: "edit" })
-                    }
-                  />
+                {/* [DELIVERY] order place er somoy customer ke ja dekhano hoyechilo */}
+                {deliveryInfo?.estimatedMinDate && (
+                  <div className="mt-2.5 pt-2.5 border-t border-gray-100 text-xs space-y-0.5">
+                    <p className="font-semibold text-gray-700">
+                      Estimate shown to customer
+                    </p>
+                    <p className="text-blue-700 font-medium">
+                      {formatDaysLabel(
+                        deliveryInfo.minDays,
+                        deliveryInfo.maxDays,
+                      )}
+                      {" • "}
+                      {formatEstimateRange(deliveryInfo)}
+                    </p>
+                    <p className="text-gray-500">
+                      {deliveryInfo.mode === "LOCAL"
+                        ? "Local delivery"
+                        : "Courier delivery"}
+                      {deliveryInfo.mode === "LOCAL" &&
+                      deliveryInfo.distanceKm !== null &&
+                      deliveryInfo.distanceKm !== undefined
+                        ? ` • about ${deliveryInfo.distanceKm} km from your store`
+                        : ""}
+                    </p>
+                  </div>
                 )}
               </div>
-              <p
-                className={
-                  order.expectedDeliveryDate
-                    ? "text-gray-800 font-medium"
-                    : "text-gray-400"
-                }
-              >
-                <i className="pi pi-truck mr-1.5"></i>
-                {formatDeliveryDate(order.expectedDeliveryDate)}
-              </p>
-              {!order.expectedDeliveryDate && canEditDeliveryDate && (
-                <p className="text-[11px] text-gray-400 mt-1">
-                  Required before marking as Shipped
-                </p>
-              )}
-
-              {/* [DELIVERY] order place er somoy customer ke ja dekhano hoyechilo */}
-              {deliveryInfo?.estimatedMinDate && (
-                <div className="mt-2.5 pt-2.5 border-t border-gray-100 text-xs space-y-0.5">
-                  <p className="font-semibold text-gray-700">
-                    Estimate shown to customer
-                  </p>
-                  <p className="text-blue-700 font-medium">
-                    {formatDaysLabel(deliveryInfo.minDays, deliveryInfo.maxDays)}
-                    {" • "}
-                    {formatEstimateRange(deliveryInfo)}
-                  </p>
-                  <p className="text-gray-500">
-                    {deliveryInfo.mode === "LOCAL"
-                      ? "Local delivery"
-                      : "Courier delivery"}
-                    {deliveryInfo.mode === "LOCAL" &&
-                    deliveryInfo.distanceKm !== null &&
-                    deliveryInfo.distanceKm !== undefined
-                      ? ` • about ${deliveryInfo.distanceKm} km from your store`
-                      : ""}
-                  </p>
-                </div>
-              )}
-            </div>
+            )}
           </div>
         </div>
 

@@ -397,6 +397,22 @@ export const deliverySettingsSchema = zod
         .max(30, "Maximum 30 days")
         .optional(),
     ),
+    localDeliveryCharge: zod.preprocess(
+      blankToUndefined,
+      zod.coerce
+        .number()
+        .min(0, "Charge cannot be negative")
+        .max(100000, "Charge is too high")
+        .optional(),
+    ),
+    nationalFallbackCharge: zod.preprocess(
+      blankToUndefined,
+      zod.coerce
+        .number()
+        .min(0, "Charge cannot be negative")
+        .max(100000, "Charge is too high")
+        .optional(),
+    ),
   })
   .superRefine((d, ctx) => {
     const needsLocal = d.deliveryType === "LOCAL" || d.deliveryType === "BOTH";
