@@ -89,13 +89,26 @@ export const lookupPincode = (pincode: string) =>
 export const checkDelivery = (
   storeUniqueId: string,
   pincode: string,
-  opts?: { country?: string; itemsTotal?: number },
+  opts?: {
+    country?: string;
+    itemsTotal?: number;
+    productId?: string;
+    variantId?: string | null;
+    quantity?: number;
+    cod?: boolean;
+  },
 ) =>
   axiosInstance.get("/api/delivery/check", {
     params: {
       storeUniqueId,
       pincode,
       ...(opts?.country ? { country: opts.country } : {}),
-      ...(opts?.itemsTotal !== undefined ? { itemsTotal: opts.itemsTotal } : {}),
+      ...(opts?.itemsTotal !== undefined
+        ? { itemsTotal: opts.itemsTotal }
+        : {}),
+      ...(opts?.productId ? { productId: opts.productId } : {}),
+      ...(opts?.variantId ? { variantId: opts.variantId } : {}),
+      ...(opts?.quantity ? { quantity: opts.quantity } : {}),
+      ...(opts?.cod ? { cod: 1 } : {}),
     },
   });

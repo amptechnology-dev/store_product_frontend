@@ -103,20 +103,44 @@ const DELIVERY_DATE_EDITABLE: OrderStatus[] = [
   "SHIPPED",
 ];
 
-// [DELIVERY] store date set kora thakle seta, nahole order er somoy dekhano estimate
 const deliveryCell = (row: OrderRow) => {
-  // [DELIVERY] delivery off store er order e delivery timing nei
   if (row.deliveryEnabled === false) return "-";
 
   if (row.expectedDeliveryDate) {
     return formatDeliveryDate(row.expectedDeliveryDate);
   }
 
-  // NOTE: formatEstimateRange er signature check kore nao
+  // courier er nijer ETD
+  if (row.shipment?.etd && row.shipment.etdSource === "COURIER") {
+    return formatDeliveryDate(row.shipment.etd);
+  }
+
   const estimate = row.deliveryInfo
     ? formatEstimateRange(row.deliveryInfo)
     : "";
-  return estimate || "-";
+  return estimate || row.deliveryInfo?.etaLabel || "-";
+};
+
+const courierCell = (row: OrderRow) => {
+  const s = row.shipment;
+  if (!s?.awb) {
+    return row.deliveryInfo?.courierName ? (
+      <span className="text-xs text-gray-400">
+        {row.deliveryInfo.courierName} (not shipped)
+      </span>
+    ) : (
+      "-"
+    );
+  }
+  return (
+    <div>
+      <p className="text-xs font-medium text-gray-800">
+        {s.courierName || "Courier"}
+      </p>
+      <p className="text-[11px] text-gray-500">{s.awb}</p>
+      {s.status && <p className="text-[11px] text-indigo-700">{s.status}</p>}
+    </div>
+  );
 };
 
 // [GST] totalAmount ekhon GST soho, tai MRP er cheye beshi hole strikethrough dekhabo na
@@ -574,7 +598,7 @@ function OrdersPage() {
                           <span className="font-medium">📦 Items:</span>{" "}
                           {order.totalItems}
                         </p>
-                         <p>
+                        <p>
                           <span className="font-medium">💳 Payment:</span>{" "}
                           {order.paymentOff
                             ? "Paid to store directly"
@@ -727,6 +751,7 @@ function OrdersPage() {
               header="Delivery"
               body={(row: OrderRow) => deliveryCell(row)}
             />
+            <Column header="Courier" body={courierCell} />
             <Column
               header="Placed On"
               body={(row: OrderRow) => formatDate(row.createdAt)}

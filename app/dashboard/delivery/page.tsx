@@ -1124,7 +1124,7 @@ function DeliveryPage() {
               </div>
 
               {/* National */}
-              {form.outside && (
+              {/* {form.outside && (
                 <div className="border border-blue-100 rounded-lg p-3">
                   <p className="text-sm font-semibold text-gray-700 mb-2">
                     <i className="pi pi-truck text-blue-600 mr-1.5"></i>
@@ -1160,10 +1160,10 @@ function DeliveryPage() {
                     values are used only when courier rates are not available.
                   </p>
                 </div>
-              )}
+              )} */}
 
               {/* International */}
-              {form.outside && form.allowInternational && (
+              {/* {form.outside && form.allowInternational && (
                 <div className="border border-blue-100 rounded-lg p-3">
                   <p className="text-sm font-semibold text-gray-700 mb-2">
                     <i className="pi pi-globe text-blue-600 mr-1.5"></i>
@@ -1202,10 +1202,10 @@ function DeliveryPage() {
                     Shiprocket panel because customs documents are needed.
                   </p>
                 </div>
-              )}
+              )} */}
 
               {/* Dispatch time */}
-              <div className="border border-blue-100 rounded-lg p-3">
+              {/* <div className="border border-blue-100 rounded-lg p-3">
                 <p className="text-sm font-semibold text-gray-700 mb-2">
                   <i className="pi pi-box text-blue-600 mr-1.5"></i>
                   Order preparation
@@ -1226,7 +1226,7 @@ function DeliveryPage() {
                     delivery time. Use minutes or hours for quick local delivery.
                   </small>
                 </div>
-              </div>
+              </div> */}
 
               {/* Save bar */}
               <div className="flex flex-wrap items-center justify-between gap-2 border border-blue-100 rounded-lg p-3 bg-blue-50/50">

@@ -22,9 +22,17 @@ export type DeliveryInfo = {
   shippingNote?: string | null;
   country?: string | null;
   pincode?: string | null;
+  courierEtaDays?: number | null;
+  chargeableWeightKg?: number | null;
 };
 
-// courier shipment (backend er order.shipment)
+export type ShipmentEvent = {
+  status?: string | null;
+  activity?: string | null;
+  location?: string | null;
+  at?: string | null;
+};
+
 export type OrderShipment = {
   provider?: string;
   shiprocketOrderId?: number | null;
@@ -35,8 +43,16 @@ export type OrderShipment = {
   trackingUrl?: string | null;
   status?: string | null;
   pickupRequestedAt?: string | null;
+  pickupScheduledDate?: string | null;
+  pickupTokenNumber?: string | null;
+  assignedAt?: string | null;
+  etd?: string | null;
+  etdSource?: "ESTIMATE" | "COURIER";
+  appliedWeight?: number | null;
+  courierSwitched?: boolean;
+  events?: ShipmentEvent[];
   lastEventAt?: string | null;
-  createdAt?: string | null;
+  createdAt?: string;
 };
 
 const UNIT_MINUTES: Record<DurationUnit, number> = {
@@ -46,10 +62,13 @@ const UNIT_MINUTES: Record<DurationUnit, number> = {
 };
 
 // value + unit -> minute
-export const toMinutes = (value: number | null | undefined, unit: DurationUnit) =>
-  Math.round(Math.max(0, Number(value) || 0) * UNIT_MINUTES[unit]);
+export const toMinutes = (
+  value: number | null | undefined,
+  unit: DurationUnit,
+) => Math.round(Math.max(0, Number(value) || 0) * UNIT_MINUTES[unit]);
 
-const pluralize = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+const pluralize = (n: number, word: string) =>
+  `${n} ${word}${n === 1 ? "" : "s"}`;
 
 // "Delivery in 45 minutes" / "Delivery in 2 hours" / "Delivery in 4-7 days" (backend er label er moto)
 export const formatDurationLabel = (minMinutes: number, maxMinutes: number) => {
@@ -97,7 +116,10 @@ export const formatEstimateDay = (d?: string | null) => {
 
 // "12 Oct" ba "12 Oct – 15 Oct"
 export const formatEstimateRange = (
-  info?: { estimatedMinDate?: string | null; estimatedMaxDate?: string | null } | null,
+  info?: {
+    estimatedMinDate?: string | null;
+    estimatedMaxDate?: string | null;
+  } | null,
 ) => {
   if (!info?.estimatedMinDate) return "";
   const a = formatEstimateDay(info.estimatedMinDate);

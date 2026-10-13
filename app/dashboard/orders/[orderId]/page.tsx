@@ -216,7 +216,111 @@ function PaymentBadge({ status }: { status?: PaymentStatus }) {
 }
 
 // ===============================================================
-// Price summary (Total MRP / Discount / [GST] Subtotal / CGST / SGST / IGST / Total)
+// Shared UI blocks
+// ===============================================================
+function SectionCard({
+  icon,
+  title,
+  right,
+  children,
+  className = "",
+}: {
+  icon: string;
+  title: string;
+  right?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      className={`bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden ${className}`}
+    >
+      <header className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-white">
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-blue-900">
+          <span className="h-7 w-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center">
+            <i className={`pi ${icon} text-xs`} />
+          </span>
+          {title}
+        </h3>
+        {right}
+      </header>
+      <div className="p-4">{children}</div>
+    </section>
+  );
+}
+
+function InfoTile({
+  label,
+  children,
+  highlight = false,
+  className = "",
+}: {
+  label: string;
+  children: React.ReactNode;
+  highlight?: boolean;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`rounded-lg border px-3 py-2 ${
+        highlight ? "bg-blue-50 border-blue-200" : "bg-gray-50 border-gray-100"
+      } ${className}`}
+    >
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+        {label}
+      </p>
+      <div className="text-sm font-medium text-gray-800 mt-0.5 break-words">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function KV({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-3 text-sm">
+      <span className="text-gray-500 shrink-0">{label}</span>
+      <span className="text-gray-800 text-right break-words">{children}</span>
+    </div>
+  );
+}
+
+function StatTile({
+  icon,
+  label,
+  value,
+  sub,
+}: {
+  icon: string;
+  label: string;
+  value: React.ReactNode;
+  sub?: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white shadow-sm px-3.5 py-3">
+      <span className="h-10 w-10 shrink-0 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center">
+        <i className={`pi ${icon}`} />
+      </span>
+      <div className="min-w-0">
+        <p className="text-[11px] font-medium text-gray-400">{label}</p>
+        <p className="text-sm font-semibold text-gray-800 truncate">{value}</p>
+        {sub && <p className="text-[11px] text-gray-500 truncate">{sub}</p>}
+      </div>
+    </div>
+  );
+}
+
+const copyText = async (text: string) => {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.success("Copied");
+  } catch {
+    toast.error("Copy failed");
+  }
+};
+
+// ===============================================================
+// Price summary
 // ===============================================================
 function PriceSummary({ order }: { order: OrderRow }) {
   const items = (order.items || []) as any[];
@@ -231,60 +335,46 @@ function PriceSummary({ order }: { order: OrderRow }) {
   const hasGst = gstRows.length > 0;
 
   return (
-    <div className="border border-blue-100 rounded-lg p-3 text-sm">
-      <p className="font-semibold text-gray-700 mb-2">Price Summary</p>
-      <div className="space-y-1.5">
-        <div className="flex justify-between text-gray-600">
-          <span>Total MRP</span>
-          <span>{money(order.totalMrp)}</span>
-        </div>
-        <div className="flex justify-between text-green-700">
-          <span>Discount</span>
-          <span>- {money(order.discount)}</span>
-        </div>
+    <SectionCard icon="pi-receipt" title="Price Summary">
+      <div className="space-y-2">
+        <KV label="Total MRP">{money(order.totalMrp)}</KV>
+        <KV label="Discount">
+          <span className="text-green-700">- {money(order.discount)}</span>
+        </KV>
 
-        {/* [GST] */}
         {hasGst && (
-          <>
-            <div className="flex justify-between text-gray-600 border-t border-dashed border-gray-200 pt-1.5">
-              <span>Subtotal</span>
-              <span>{money(order.subtotal)}</span>
-            </div>
+          <div className="border-t border-dashed border-gray-200 pt-2 space-y-2">
+            <KV label="Subtotal">{money(order.subtotal)}</KV>
             {gstRows.map((r) => (
-              <div key={r.label} className="flex justify-between text-gray-600">
-                <span>{r.label}</span>
-                <span>
-                  {anyInclusive ? "" : "+ "}
-                  {money(r.value)}
-                </span>
-              </div>
+              <KV key={r.label} label={r.label}>
+                {anyInclusive ? "" : "+ "}
+                {money(r.value)}
+              </KV>
             ))}
             {anyInclusive && (
               <p className="text-[11px] text-gray-400">
                 GST amounts are already included in item prices.
               </p>
             )}
-          </>
-        )}
-
-        {Number(order.shippingCharge || 0) > 0 && (
-          <div className="flex justify-between text-gray-600">
-            <span>Shipping</span>
-            <span>{money(order.shippingCharge)}</span>
           </div>
         )}
 
-        <div className="flex justify-between border-t border-dashed border-gray-200 pt-2 mt-2 font-semibold text-blue-800 text-base">
-          <span>Total Amount</span>
-          <span>{money(order.totalAmount)}</span>
-        </div>
+        {Number(order.shippingCharge || 0) > 0 && (
+          <KV label="Shipping">{money(order.shippingCharge)}</KV>
+        )}
       </div>
+
+      <div className="mt-3 flex items-center justify-between rounded-lg bg-gradient-to-r from-blue-600 to-blue-700 px-3.5 py-2.5 text-white">
+        <span className="text-sm font-medium">Total Amount</span>
+        <span className="text-lg font-bold">{money(order.totalAmount)}</span>
+      </div>
+
       {hasPending && (
         <p className="text-[11px] text-amber-600 mt-2">
           Some items are waiting for price estimate, total excludes them.
         </p>
       )}
-    </div>
+    </SectionCard>
   );
 }
 
@@ -294,7 +384,7 @@ function PriceSummary({ order }: { order: OrderRow }) {
 function PaymentCard({ order }: { order: OrderRow }) {
   const method = order.paymentMethod || "COD";
   const status: PaymentStatus = order.paymentStatus || "PENDING";
-  const attempts = [...(order.paymentAttempts || [])].reverse(); // latest first
+  const attempts = [...(order.paymentAttempts || [])].reverse();
   const successAttempt = (order.paymentAttempts || []).find(
     (a) => a.status === "SUCCESS",
   );
@@ -303,134 +393,444 @@ function PaymentCard({ order }: { order: OrderRow }) {
     isOnline && status !== "PAID" && order.status === "PENDING";
 
   return (
-    <div className="border border-blue-100 rounded-lg overflow-hidden text-sm">
-      <div className="bg-blue-50 px-3 py-2 flex items-center justify-between gap-2">
-        <p className="font-semibold text-blue-800">
-          <i className="pi pi-wallet mr-1.5"></i>
-          Payment
+    <SectionCard
+      icon="pi-wallet"
+      title="Payment"
+      right={<PaymentBadge status={status} />}
+    >
+      <div className="grid grid-cols-2 gap-2">
+        <InfoTile label="Method">
+          {isOnline ? "Online (PayU)" : "Cash on Delivery"}
+        </InfoTile>
+        <InfoTile label="Amount" highlight>
+          {money(order.totalAmount)}
+        </InfoTile>
+      </div>
+
+      {!isOnline && status !== "PAID" && (
+        <p className="mt-3 text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg p-2.5">
+          Collect {money(order.totalAmount)} from the customer at delivery.
+          Payment will be marked PAID when the order is Delivered.
         </p>
-        <PaymentBadge status={status} />
-      </div>
+      )}
 
-      <div className="p-3 space-y-2">
-        <div className="flex justify-between">
-          <span className="text-gray-500">Method</span>
-          <span className="font-medium text-gray-800">
-            {isOnline ? "Online (PayU)" : "Cash on Delivery"}
-          </span>
+      {status === "PAID" && (
+        <div className="mt-3 space-y-1.5 border-t border-gray-100 pt-3">
+          {order.paidAt && <KV label="Paid on">{safeDate(order.paidAt)}</KV>}
+          {isOnline && successAttempt?.mode && (
+            <KV label="Mode">{successAttempt.mode}</KV>
+          )}
+          {isOnline && successAttempt?.mihpayid && (
+            <KV label="PayU ID">{successAttempt.mihpayid}</KV>
+          )}
+          {isOnline && successAttempt?.bankRefNum && (
+            <KV label="Bank Ref">{successAttempt.bankRefNum}</KV>
+          )}
         </div>
+      )}
 
-        <div className="flex justify-between">
-          <span className="text-gray-500">Amount</span>
-          <span className="font-semibold text-gray-800">
-            {money(order.totalAmount)}
-          </span>
+      {waitingForPayment && (
+        <div className="mt-3 text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-2.5">
+          <i className="pi pi-info-circle mr-1"></i>
+          {status === "FAILED"
+            ? "Last payment attempt failed. Customer can retry"
+            : "Waiting for the customer to complete payment"}
+          {order.paymentExpiresAt
+            ? ` until ${safeDate(order.paymentExpiresAt)}.`
+            : "."}{" "}
+          You can confirm this order only after payment is received.
         </div>
+      )}
 
-        {/* COD */}
-        {!isOnline && status !== "PAID" && (
-          <p className="text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-md p-2">
-            Collect {money(order.totalAmount)} from the customer at delivery.
-            Payment will be marked as PAID when you mark the order Delivered.
+      {status === "REFUNDED" && (
+        <p className="mt-3 text-xs text-purple-700 bg-purple-50 border border-purple-200 rounded-lg p-2.5">
+          This payment has been refunded.
+        </p>
+      )}
+
+      {isOnline && attempts.length > 0 && (
+        <div className="mt-3 border-t border-gray-100 pt-3">
+          <p className="text-xs font-semibold text-gray-600 mb-2">
+            Payment attempts ({attempts.length})
           </p>
-        )}
-
-        {/* PAID details */}
-        {status === "PAID" && (
-          <div className="space-y-1.5 border-t border-gray-100 pt-2">
-            {order.paidAt && (
-              <div className="flex justify-between">
-                <span className="text-gray-500">Paid on</span>
-                <span className="text-gray-800">{safeDate(order.paidAt)}</span>
-              </div>
-            )}
-            {isOnline && successAttempt?.mode && (
-              <div className="flex justify-between">
-                <span className="text-gray-500">Mode</span>
-                <span className="text-gray-800">{successAttempt.mode}</span>
-              </div>
-            )}
-            {isOnline && successAttempt?.mihpayid && (
-              <div className="flex justify-between gap-2">
-                <span className="text-gray-500 shrink-0">PayU ID</span>
-                <span className="text-gray-800 break-all text-right">
-                  {successAttempt.mihpayid}
-                </span>
-              </div>
-            )}
-            {isOnline && successAttempt?.bankRefNum && (
-              <div className="flex justify-between gap-2">
-                <span className="text-gray-500 shrink-0">Bank Ref</span>
-                <span className="text-gray-800 break-all text-right">
-                  {successAttempt.bankRefNum}
-                </span>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Online, still unpaid */}
-        {waitingForPayment && (
-          <div className="text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-md p-2">
-            <i className="pi pi-info-circle mr-1"></i>
-            {status === "FAILED"
-              ? "Last payment attempt failed. Customer can retry"
-              : "Waiting for the customer to complete payment"}
-            {order.paymentExpiresAt
-              ? ` until ${safeDate(order.paymentExpiresAt)}.`
-              : "."}{" "}
-            You can confirm this order only after payment is received.
-          </div>
-        )}
-
-        {status === "REFUNDED" && (
-          <p className="text-xs text-purple-700 bg-purple-50 border border-purple-200 rounded-md p-2">
-            This payment has been refunded.
-          </p>
-        )}
-
-        {/* Attempt history */}
-        {isOnline && attempts.length > 0 && (
-          <div className="border-t border-gray-100 pt-2">
-            <p className="text-xs font-semibold text-gray-600 mb-1.5">
-              Payment attempts ({attempts.length})
-            </p>
-            <div className="space-y-1.5">
-              {attempts.map((a) => (
-                <div
-                  key={a.txnid}
-                  className="border border-gray-100 rounded-md p-2 text-xs"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span
-                      className={`px-2 py-0.5 rounded-full font-semibold ${ATTEMPT_STYLES[a.status]}`}
-                    >
-                      {a.status}
-                    </span>
-                    <span className="text-gray-500">
-                      {safeDate(a.completedAt || a.createdAt)}
-                    </span>
-                  </div>
-                  <p className="text-gray-500 mt-1 break-all">Txn: {a.txnid}</p>
-                  <p className="text-gray-700">
-                    {money(a.amount)}
-                    {a.mode ? ` • ${a.mode}` : ""}
-                  </p>
-                  {a.errorMessage && (
-                    <p className="text-red-600 mt-0.5">{a.errorMessage}</p>
-                  )}
+          <div className="space-y-2">
+            {attempts.map((a) => (
+              <div
+                key={a.txnid}
+                className="border border-gray-100 rounded-lg p-2.5 text-xs bg-gray-50/60"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span
+                    className={`px-2 py-0.5 rounded-full font-semibold ${ATTEMPT_STYLES[a.status]}`}
+                  >
+                    {a.status}
+                  </span>
+                  <span className="text-gray-500">
+                    {safeDate(a.completedAt || a.createdAt)}
+                  </span>
                 </div>
-              ))}
-            </div>
+                <p className="text-gray-500 mt-1 break-all">Txn: {a.txnid}</p>
+                <p className="text-gray-700">
+                  {money(a.amount)}
+                  {a.mode ? ` • ${a.mode}` : ""}
+                </p>
+                {a.errorMessage && (
+                  <p className="text-red-600 mt-0.5">{a.errorMessage}</p>
+                )}
+              </div>
+            ))}
           </div>
-        )}
-      </div>
-    </div>
+        </div>
+      )}
+    </SectionCard>
   );
 }
 
 // ===============================================================
-// Price estimate panel (price on request item gulor jonno)
+// Courier (Shiprocket) details
+// ===============================================================
+const COURIER_STEPS = [
+  "Confirmed",
+  "Shipment",
+  "AWB",
+  "Pickup",
+  "In transit",
+  "Delivered",
+];
+
+const SHIPMENT_STATUS_LABEL: Record<string, string> = {
+  CREATED: "Shipment created",
+  AWB_ASSIGNED: "AWB assigned",
+  PICKUP_SCHEDULED: "Pickup scheduled",
+};
+
+const shipmentTone = (st?: string | null) => {
+  const v = (st || "").toUpperCase();
+  if (v.includes("RTO") || v.includes("CANCEL") || v.includes("UNDELIVERED"))
+    return "bg-red-100 text-red-700";
+  if (v.includes("DELIVERED")) return "bg-green-100 text-green-800";
+  if (v.includes("TRANSIT") || v.includes("PICKED") || v.includes("OUT FOR"))
+    return "bg-indigo-100 text-indigo-800";
+  return "bg-blue-100 text-blue-800";
+};
+
+// koyta step shesh hoyeche
+const getCourierProgress = (order: OrderRow): number => {
+  const s = order.shipment;
+  const flags = [
+    ["CONFIRMED", "SHIPPED", "DELIVERED"].includes(order.status),
+    !!s?.shipmentId,
+    !!s?.awb,
+    !!s?.pickupRequestedAt,
+    ["SHIPPED", "DELIVERED"].includes(order.status),
+    order.status === "DELIVERED",
+  ];
+  let done = 0;
+  for (const f of flags) {
+    if (f) done++;
+    else break;
+  }
+  return done;
+};
+
+function CourierStepper({ done }: { done: number }) {
+  return (
+    <div className="flex items-start">
+      {COURIER_STEPS.map((label, i) => {
+        const completed = i < done;
+        const current = i === done;
+        return (
+          <div
+            key={label}
+            className="flex-1 flex flex-col items-center relative"
+          >
+            {i > 0 && (
+              <span
+                className={`absolute top-3 right-1/2 w-full h-0.5 ${
+                  i <= done ? "bg-green-500" : "bg-gray-200"
+                }`}
+              />
+            )}
+            <span
+              className={`relative z-10 h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold border-2 ${
+                completed
+                  ? "bg-green-500 border-green-500 text-white"
+                  : current
+                    ? "bg-white border-blue-500 text-blue-600"
+                    : "bg-white border-gray-200 text-gray-400"
+              }`}
+            >
+              {completed ? <i className="pi pi-check text-[9px]" /> : i + 1}
+            </span>
+            <span
+              className={`mt-1.5 text-[10px] text-center leading-tight ${
+                completed || current
+                  ? "text-gray-700 font-medium"
+                  : "text-gray-400"
+              }`}
+            >
+              {label}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function CourierDetailsCard({ order }: { order: OrderRow }) {
+  const s = order.shipment;
+  const d = order.deliveryInfo;
+  const isCourierMode = d?.mode === "NATIONAL" || d?.mode === "INTERNATIONAL";
+  if (!s && !isCourierMode) return null;
+
+  const events = [...(s?.events || [])].reverse().slice(0, 8); // latest first
+  const done = getCourierProgress(order);
+
+  return (
+    <SectionCard
+      icon="pi-truck"
+      title="Courier & Shipment"
+      right={
+        s?.status ? (
+          <span
+            className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${shipmentTone(s.status)}`}
+          >
+            {SHIPMENT_STATUS_LABEL[s.status] ?? s.status}
+          </span>
+        ) : (
+          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-600">
+            Not shipped
+          </span>
+        )
+      }
+    >
+      {/* progress */}
+      {d?.mode !== "INTERNATIONAL" && (
+        <div className="mb-4 rounded-lg border border-gray-100 bg-gray-50/70 px-3 pt-3 pb-2">
+          <CourierStepper done={done} />
+        </div>
+      )}
+
+      {/* shipment nei */}
+      {!s && d && (
+        <>
+          <div
+            className={`mb-3 text-xs rounded-lg border p-2.5 ${
+              d.mode === "INTERNATIONAL"
+                ? "bg-blue-50 border-blue-200 text-blue-800"
+                : "bg-amber-50 border-amber-200 text-amber-800"
+            }`}
+          >
+            <i className="pi pi-info-circle mr-1.5"></i>
+            {d.mode === "INTERNATIONAL"
+              ? "International shipments are created from the Shiprocket panel (customs documents are required)."
+              : "Shipment is not created yet. Confirm the order, then create the courier shipment."}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <InfoTile label="Quoted courier">{d.courierName || "-"}</InfoTile>
+            <InfoTile label="Courier rate">
+              {d.courierRate != null ? money(d.courierRate) : "-"}
+            </InfoTile>
+            <InfoTile label="Rate based on">
+              {d.chargeableWeightKg != null
+                ? `${d.chargeableWeightKg} kg`
+                : "-"}
+            </InfoTile>
+            <InfoTile label="Estimate source">
+              {d.source === "SHIPROCKET" ? "Live courier rate" : "Store backup"}
+            </InfoTile>
+          </div>
+        </>
+      )}
+
+      {/* shipment ache */}
+      {s && (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <InfoTile label="Courier partner">{s.courierName || "-"}</InfoTile>
+
+            <InfoTile label="AWB number">
+              {s.awb ? (
+                <span className="flex items-center gap-1.5">
+                  <span className="break-all">{s.awb}</span>
+                  <button
+                    type="button"
+                    title="Copy AWB"
+                    onClick={() => copyText(s.awb as string)}
+                    className="h-6 w-6 shrink-0 rounded-md hover:bg-gray-200 text-gray-500 flex items-center justify-center"
+                  >
+                    <i className="pi pi-copy text-xs" />
+                  </button>
+                </span>
+              ) : (
+                "-"
+              )}
+            </InfoTile>
+
+            <InfoTile label="Pickup by courier">
+              {s.pickupScheduledDate
+                ? safeDate(s.pickupScheduledDate)
+                : s.pickupRequestedAt
+                  ? "Requested, date awaited"
+                  : "Not requested"}
+              {s.pickupTokenNumber && (
+                <span className="block text-[11px] font-normal text-gray-500">
+                  Token: {s.pickupTokenNumber}
+                </span>
+              )}
+            </InfoTile>
+
+            <InfoTile label="Expected delivery" highlight>
+              {s.etd ? safeDate(s.etd) : "-"}
+              {s.etd && (
+                <span className="block text-[11px] font-normal text-gray-500">
+                  {s.etdSource === "COURIER"
+                    ? "Confirmed by courier"
+                    : "Initial estimate"}
+                </span>
+              )}
+            </InfoTile>
+
+            <InfoTile label="Courier charged weight">
+              {s.appliedWeight != null ? `${s.appliedWeight} kg` : "-"}
+            </InfoTile>
+
+            <InfoTile label="Quoted courier rate">
+              {d?.courierRate != null ? money(d.courierRate) : "-"}
+            </InfoTile>
+          </div>
+
+          {s.courierSwitched && (
+            <p className="mt-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+              <i className="pi pi-exclamation-triangle mr-1.5"></i>
+              The quoted courier was not available, so Shiprocket assigned
+              another one. The final rate may differ.
+            </p>
+          )}
+
+          {s.trackingUrl && (
+            <a
+              href={s.trackingUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-3 flex items-center justify-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2 transition-colors"
+            >
+              <i className="pi pi-external-link text-xs" />
+              Track shipment
+            </a>
+          )}
+
+          {events.length > 0 && (
+            <div className="mt-4 border-t border-gray-100 pt-3">
+              <p className="text-xs font-semibold text-gray-600 mb-3">
+                Tracking history
+              </p>
+              <ol className="relative border-l-2 border-blue-100 ml-1.5 space-y-3">
+                {events.map((e, i) => (
+                  <li key={i} className="pl-4 relative">
+                    <span
+                      className={`absolute -left-[7px] top-1 h-3 w-3 rounded-full border-2 border-white ${
+                        i === 0 ? "bg-blue-600" : "bg-gray-300"
+                      }`}
+                    />
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-xs font-semibold text-gray-800">
+                        {e.status || e.activity}
+                      </p>
+                      <span className="text-[11px] text-gray-400 shrink-0">
+                        {safeDate(e.at)}
+                      </span>
+                    </div>
+                    {e.activity && e.status && e.activity !== e.status && (
+                      <p className="text-xs text-gray-500">{e.activity}</p>
+                    )}
+                    {e.location && (
+                      <p className="text-[11px] text-gray-400">
+                        <i className="pi pi-map-marker text-[10px] mr-1" />
+                        {e.location}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </>
+      )}
+    </SectionCard>
+  );
+}
+
+// ===============================================================
+// Packaging
+// ===============================================================
+function PackagingCard({ order }: { order: OrderRow }) {
+  const p = order.parcel;
+  if (!p || !p.items?.length) return null;
+
+  const hasDefaults = p.items.some(
+    (i) => i.usedDefaultWeight || i.usedDefaultDims,
+  );
+
+  return (
+    <SectionCard icon="pi-box" title="Packaging">
+      <div className="grid grid-cols-3 gap-2">
+        <InfoTile label="Actual">{p.weight} kg</InfoTile>
+        <InfoTile label="Volumetric">{p.volumetricWeight} kg</InfoTile>
+        <InfoTile label="Chargeable" highlight>
+          {p.chargeableWeight} kg
+        </InfoTile>
+      </div>
+
+      <div className="mt-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 flex items-center justify-between text-sm">
+        <span className="text-gray-500">Parcel size</span>
+        <span className="font-medium text-gray-800">
+          {p.length} × {p.breadth} × {p.height} cm
+        </span>
+      </div>
+
+      <div className="mt-3 space-y-2">
+        {p.items.map((it, i) => (
+          <div
+            key={i}
+            className="rounded-lg border border-gray-100 p-2.5 text-xs"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <p className="font-medium text-gray-800 line-clamp-1">
+                {it.name || "Item"}
+                <span className="text-gray-400"> × {it.quantity}</span>
+              </p>
+              <span className="shrink-0 font-semibold text-blue-700">
+                {it.lineWeightKg} kg
+              </span>
+            </div>
+            <p className="text-gray-500 mt-0.5">
+              {it.unitWeightKg} kg each • {it.length}×{it.breadth}×{it.height}{" "}
+              cm
+            </p>
+            {(it.usedDefaultWeight || it.usedDefaultDims) && (
+              <p className="text-amber-600 text-[11px] mt-0.5">
+                <i className="pi pi-exclamation-triangle text-[10px] mr-1" />
+                Packaging not set, default values used
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {hasDefaults && (
+        <p className="mt-3 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+          Add weight and size in the product's packaging details so courier
+          rates are accurate.
+        </p>
+      )}
+    </SectionCard>
+  );
+}
+
+// ===============================================================
+// Quote panel (design change kori ni)
 // ===============================================================
 function QuotePanel({
   order,
@@ -850,12 +1250,19 @@ function OrderDetailsPage() {
 
   const deliveryInfo = order.deliveryInfo;
 
+  // Quick stats-er "Expected delivery" tile-er jonno
+  const expectedText = order.expectedDeliveryDate
+    ? formatDeliveryDate(order.expectedDeliveryDate)
+    : order.shipment?.etd
+      ? safeDate(order.shipment.etd)
+      : deliveryInfo?.etaLabel || "-";
+
   return (
     <div className="w-full flex justify-start items-start pt-2">
-      <div className="w-full bg-white rounded-lg shadow p-3 sm:p-4 space-y-3">
-        {/* Header: back + order# + customer (compact, same block) + status */}
+      <div className="w-full bg-gray-50/60 rounded-xl shadow p-3 sm:p-4 space-y-4">
+        {/* ============ Header ============ */}
         <div
-          className="flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-center p-3 rounded-lg"
+          className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center p-3.5 rounded-xl shadow-sm"
           style={{ background: "linear-gradient(120deg,#3b82f6,#1d4ed8)" }}
         >
           <div className="flex items-center gap-2.5 min-w-0">
@@ -872,7 +1279,7 @@ function OrderDetailsPage() {
               <p className="text-[11px] text-blue-100 leading-tight">
                 Placed on {formatDate(order.createdAt)}
               </p>
-              <p className="text-xs text-white/90 leading-tight mt-0.5">
+              <p className="text-xs text-white/90 leading-tight mt-1">
                 <i className="pi pi-user mr-1"></i>
                 {order.userId?.name}
                 <span className="text-blue-100"> • {order.userId?.phone}</span>
@@ -903,7 +1310,61 @@ function OrderDetailsPage() {
           </div>
         </div>
 
-        {/* Status action buttons */}
+        {/* ============ Quick stats ============ */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+          <StatTile
+            icon="pi-wallet"
+            label="Order total"
+            value={money(order.totalAmount)}
+            sub={
+              Number(order.shippingCharge || 0) > 0
+                ? `incl. ${money(order.shippingCharge)} shipping`
+                : undefined
+            }
+          />
+          <StatTile
+            icon="pi-box"
+            label="Items"
+            value={`${order.totalItems} item${order.totalItems > 1 ? "s" : ""}`}
+            sub={
+              order.parcel
+                ? `${order.parcel.chargeableWeight} kg chargeable`
+                : undefined
+            }
+          />
+          <StatTile
+            icon="pi-credit-card"
+            label="Payment"
+            value={
+              order.paymentOff
+                ? "Paid to store"
+                : order.paymentMethod === "ONLINE"
+                  ? "Online"
+                  : "Cash on Delivery"
+            }
+            sub={order.paymentOff ? undefined : order.paymentStatus}
+          />
+          {order.deliveryEnabled !== false ? (
+            <StatTile
+              icon="pi-calendar"
+              label="Expected delivery"
+              value={expectedText}
+              sub={
+                order.shipment?.courierName ||
+                deliveryInfo?.courierName ||
+                undefined
+              }
+            />
+          ) : (
+            <StatTile
+              icon="pi-calendar"
+              label="Placed on"
+              value={safeDate(order.createdAt)}
+            />
+          )}
+        </div>
+
+        {/* ============ Status actions ============ */}
         <div className="flex flex-wrap items-center gap-2">
           {isTerminal ? (
             <p className="text-xs text-gray-500 italic">
@@ -939,14 +1400,12 @@ function OrderDetailsPage() {
             Payment has been received, so this order can no longer be cancelled.
           </p>
         )}
-
         {quotePending && order.status === "PENDING" && (
           <p className="text-xs text-amber-700">
             Order can be confirmed only after the customer accepts your price
             estimate.
           </p>
         )}
-
         {!quotePending && paymentPending && order.status === "PENDING" && (
           <p className="text-xs text-amber-700">
             <i className="pi pi-lock mr-1"></i>
@@ -955,10 +1414,10 @@ function OrderDetailsPage() {
           </p>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-          {/* Left: Items */}
-          <div className="lg:col-span-2 space-y-3">
-            {/* Price estimate panel */}
+        {/* ============ Main grid ============ */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          {/* ---------- LEFT ---------- */}
+          <div className="lg:col-span-7 space-y-4 min-w-0">
             {order.status === "PENDING" && quotePending && (
               <QuotePanel
                 key={
@@ -972,16 +1431,16 @@ function OrderDetailsPage() {
             )}
 
             {order.priceStatus === "CONFIRMED" && (
-              <div className="border border-green-200 bg-green-50 rounded-lg p-2.5 text-sm text-green-800">
+              <div className="border border-green-200 bg-green-50 rounded-xl p-3 text-sm text-green-800">
                 <i className="pi pi-check-circle mr-1.5"></i>
                 Customer accepted the estimated price. Order total: ₹
                 {Number(order.totalAmount).toFixed(2)}
               </div>
             )}
 
-            <div className="border border-blue-100 rounded-lg overflow-hidden">
-              {/* Items header: Select all + Send selected */}
-              <div className="bg-blue-50 px-3 py-2 text-sm flex flex-wrap items-center justify-between gap-2">
+            {/* Items */}
+            <section className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+              <div className="px-4 py-2.5 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-white text-sm flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-3">
                   <Checkbox
                     inputId="select-all-items"
@@ -991,7 +1450,7 @@ function OrderDetailsPage() {
                   />
                   <label
                     htmlFor="select-all-items"
-                    className="font-semibold text-blue-800 cursor-pointer select-none"
+                    className="font-semibold text-blue-900 cursor-pointer select-none"
                   >
                     Items ({order.totalItems})
                   </label>
@@ -1023,7 +1482,7 @@ function OrderDetailsPage() {
                     />
                   </div>
                 ) : (
-                  <span className="text-[11px] font-normal text-blue-500">
+                  <span className="text-[11px] text-blue-500">
                     select products or tap WhatsApp icon to share one
                   </span>
                 )}
@@ -1036,8 +1495,8 @@ function OrderDetailsPage() {
                     <div
                       key={item._id}
                       onClick={() => toggleItem(item._id)}
-                      className={`flex items-start gap-3 p-2.5 cursor-pointer transition-colors ${
-                        isSelected ? "bg-blue-50" : "hover:bg-blue-50/60"
+                      className={`flex items-start gap-3 p-3 cursor-pointer transition-colors ${
+                        isSelected ? "bg-blue-50" : "hover:bg-gray-50"
                       }`}
                     >
                       <div
@@ -1056,20 +1515,21 @@ function OrderDetailsPage() {
                           alt={item.name}
                           autoPlay={false}
                           showBadge={false}
-                          wrapperClassName="h-14 w-14 rounded-lg border border-gray-200 bg-gray-100 shrink-0"
+                          wrapperClassName="h-16 w-16 rounded-xl border border-gray-200 bg-gray-100 shrink-0"
                         />
                       ) : (
-                        <div className="h-14 w-14 rounded-lg border border-gray-200 bg-gray-100 shrink-0 flex items-center justify-center text-gray-400 text-xs">
+                        <div className="h-16 w-16 rounded-xl border border-gray-200 bg-gray-100 shrink-0 flex items-center justify-center text-gray-400 text-xs">
                           N/A
                         </div>
                       )}
 
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-800 line-clamp-1">
+                        <p className="text-sm font-semibold text-gray-800 line-clamp-1">
                           {item.name}
                         </p>
                         <p className="text-xs text-gray-500">
                           Code: {item.productCode || "-"} • {item.unit}
+                          {item.color ? ` • ${item.color}` : ""}
                           {item.size ? ` • ${item.size}` : ""}
                           {item.weight ? ` • ${item.weight}` : ""}
                         </p>
@@ -1088,7 +1548,6 @@ function OrderDetailsPage() {
                             </>
                           )}
                         </p>
-                        {/* [GST] */}
                         {Number(item.gstAmount) > 0 && (
                           <p className="text-[11px] text-green-700 mt-0.5">
                             GST ₹{Number(item.gstAmount).toFixed(2)}
@@ -1099,7 +1558,6 @@ function OrderDetailsPage() {
 
                       <div className="flex flex-col items-end justify-between self-stretch shrink-0">
                         <div className="text-sm font-semibold text-blue-700">
-                          {/* [GST] GST soho line total */}
                           {(item.lineTotalWithGst ?? item.lineTotal) != null ? (
                             `₹${Number(item.lineTotalWithGst ?? item.lineTotal).toFixed(2)}`
                           ) : (
@@ -1108,7 +1566,6 @@ function OrderDetailsPage() {
                             </span>
                           )}
                         </div>
-                        {/* Single item share */}
                         <button
                           type="button"
                           title="Share this product with karigar"
@@ -1125,35 +1582,56 @@ function OrderDetailsPage() {
                   );
                 })}
               </div>
-            </div>
+            </section>
 
-            {/* Delivery Address */}
-            <div className="border border-blue-100 rounded-lg p-3 text-sm">
-              <p className="font-semibold text-gray-700 mb-1.5">
-                Delivery Address
-              </p>
-              <p className="text-gray-800">{order.deliveryAddress.fullName}</p>
-              <p className="text-gray-600">{order.deliveryAddress.phone}</p>
-              <p className="text-gray-600">
-                {order.deliveryAddress.addressLine}
-                {order.deliveryAddress.area
-                  ? `, ${order.deliveryAddress.area}`
-                  : ""}
-              </p>
-              <p className="text-gray-600">
-                {order.deliveryAddress.city}, {order.deliveryAddress.state} -{" "}
-                {order.deliveryAddress.pincode}
-              </p>
-              <p className="text-gray-600">{order.deliveryAddress.country}</p>
-              {order.note && (
-                <p className="text-gray-600 mt-1.5">
-                  <span className="font-medium">Note:</span> {order.note}
+            {/* Courier & shipment */}
+            {order.deliveryEnabled !== false && (
+              <div className="space-y-4">
+                <ShipmentCard
+                  order={order}
+                  onUpdated={(o) =>
+                    setOrder((prev) => (prev ? { ...prev, ...o } : prev))
+                  }
+                />
+                <CourierDetailsCard order={order} />
+              </div>
+            )}
+
+            {/* Packaging + Address side by side */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+              <PackagingCard order={order} />
+
+              <SectionCard icon="pi-map-marker" title="Delivery Address">
+                <p className="text-sm font-semibold text-gray-800">
+                  {order.deliveryAddress.fullName}
                 </p>
-              )}
+                <p className="text-sm text-gray-600">
+                  <i className="pi pi-phone text-[11px] mr-1.5 text-gray-400"></i>
+                  {order.deliveryAddress.phone}
+                </p>
+                <div className="mt-2 text-sm text-gray-600 leading-relaxed">
+                  <p>
+                    {order.deliveryAddress.addressLine}
+                    {order.deliveryAddress.area
+                      ? `, ${order.deliveryAddress.area}`
+                      : ""}
+                  </p>
+                  <p>
+                    {order.deliveryAddress.city}, {order.deliveryAddress.state}{" "}
+                    - {order.deliveryAddress.pincode}
+                  </p>
+                  <p>{order.deliveryAddress.country}</p>
+                </div>
+                {order.note && (
+                  <p className="mt-3 text-xs text-gray-600 bg-gray-50 border border-gray-100 rounded-lg p-2.5">
+                    <span className="font-semibold">Note:</span> {order.note}
+                  </p>
+                )}
+              </SectionCard>
             </div>
 
             {order.status === "CANCELLED" && order.cancelReason && (
-              <div className="border border-red-200 bg-red-50 rounded-lg p-3 text-sm">
+              <div className="border border-red-200 bg-red-50 rounded-xl p-3.5 text-sm">
                 <p className="font-semibold text-red-700">
                   Cancellation Reason
                 </p>
@@ -1172,39 +1650,42 @@ function OrderDetailsPage() {
 
             {/* Status history */}
             {order.statusHistory && order.statusHistory.length > 0 && (
-              <div className="border border-blue-100 rounded-lg p-3 text-sm">
-                <p className="font-semibold text-gray-700 mb-1.5">
-                  Status History
-                </p>
-                <div className="space-y-1">
-                  {order.statusHistory.map((h, i) => (
-                    <div
-                      key={i}
-                      className="flex justify-between text-xs text-gray-600"
-                    >
+              <SectionCard icon="pi-history" title="Status History">
+                <ol className="relative border-l-2 border-blue-100 ml-1.5 space-y-3">
+                  {[...order.statusHistory].reverse().map((h, i) => (
+                    <li key={i} className="pl-4 relative">
                       <span
-                        className={`px-2 py-0.5 rounded-full ${STATUS_STYLES[h.status]}`}
-                      >
-                        {h.status}
-                      </span>
-                      <span>{safeDate(h.at)}</span>
-                    </div>
+                        className={`absolute -left-[7px] top-1 h-3 w-3 rounded-full border-2 border-white ${
+                          i === 0 ? "bg-blue-600" : "bg-gray-300"
+                        }`}
+                      />
+                      <div className="flex items-center justify-between gap-2">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[h.status]}`}
+                        >
+                          {h.status}
+                        </span>
+                        <span className="text-[11px] text-gray-400">
+                          {safeDate(h.at)}
+                        </span>
+                      </div>
+                      {h.note && (
+                        <p className="text-xs text-gray-500 mt-1">{h.note}</p>
+                      )}
+                    </li>
                   ))}
-                </div>
-              </div>
+                </ol>
+              </SectionCard>
             )}
 
             {/* Price history */}
             {order.priceHistory && order.priceHistory.length > 0 && (
-              <div className="border border-amber-100 rounded-lg p-3 text-sm">
-                <p className="font-semibold text-gray-700 mb-1.5">
-                  Price Estimate History
-                </p>
-                <div className="space-y-1">
+              <SectionCard icon="pi-tag" title="Price Estimate History">
+                <div className="space-y-2">
                   {order.priceHistory.map((h, i) => (
                     <div
                       key={i}
-                      className="flex justify-between gap-2 text-xs text-gray-600"
+                      className="flex justify-between gap-2 text-xs text-gray-600 border border-gray-100 rounded-lg p-2.5"
                     >
                       <span>
                         <b>
@@ -1219,33 +1700,28 @@ function OrderDetailsPage() {
                           : ""}
                         {h.note ? ` — "${h.note}"` : ""}
                       </span>
-                      <span className="shrink-0">{safeDate(h.at)}</span>
+                      <span className="shrink-0 text-gray-400">
+                        {safeDate(h.at)}
+                      </span>
                     </div>
                   ))}
                 </div>
-              </div>
+              </SectionCard>
             )}
           </div>
 
-          {/* Right column: summary + payment + delivery */}
-          <div className="space-y-3 self-start">
+          {/* ---------- RIGHT ---------- */}
+          <div className="lg:col-span-5 space-y-4 min-w-0 self-start">
             <PriceSummary order={order} />
 
             {!order.paymentOff && <PaymentCard order={order} />}
 
-            <ShipmentCard
-              order={order}
-              onUpdated={(o) =>
-                setOrder((prev) => (prev ? { ...prev, ...o } : prev))
-              }
-            />
             {order.deliveryEnabled !== false && (
-              <div className="border border-blue-100 rounded-lg p-3 text-sm">
-                <div className="flex items-center justify-between mb-1.5">
-                  <p className="font-semibold text-gray-700">
-                    Expected Delivery
-                  </p>
-                  {canEditDeliveryDate && (
+              <SectionCard
+                icon="pi-calendar"
+                title="Expected Delivery"
+                right={
+                  canEditDeliveryDate ? (
                     <Button
                       label={order.expectedDeliveryDate ? "Edit" : "Set date"}
                       icon="pi pi-calendar"
@@ -1255,236 +1731,228 @@ function OrderDetailsPage() {
                         setDateDialog({ visible: true, mode: "edit" })
                       }
                     />
-                  )}
-                </div>
-                <p
-                  className={
+                  ) : undefined
+                }
+              >
+                <div
+                  className={`flex items-center gap-3 rounded-lg border px-3 py-3 ${
                     order.expectedDeliveryDate
-                      ? "text-gray-800 font-medium"
-                      : "text-gray-400"
-                  }
+                      ? "bg-blue-50 border-blue-200"
+                      : "bg-gray-50 border-gray-100"
+                  }`}
                 >
-                  <i className="pi pi-truck mr-1.5"></i>
-                  {formatDeliveryDate(order.expectedDeliveryDate)}
-                </p>
-                {!order.expectedDeliveryDate && canEditDeliveryDate && (
-                  <p className="text-[11px] text-gray-400 mt-1">
-                    Required before marking as Shipped
-                  </p>
-                )}
-
-                {/* [DELIVERY] order place er somoy customer ke ja dekhano hoyechilo */}
-                {deliveryInfo?.estimatedMinDate && (
-                  <div className="mt-2.5 pt-2.5 border-t border-gray-100 text-xs space-y-0.5">
-                    <p className="font-semibold text-gray-700">
-                      Estimate shown to customer
+                  <i
+                    className={`pi pi-truck text-lg ${
+                      order.expectedDeliveryDate
+                        ? "text-blue-600"
+                        : "text-gray-400"
+                    }`}
+                  />
+                  <div>
+                    <p
+                      className={`text-sm font-semibold ${
+                        order.expectedDeliveryDate
+                          ? "text-gray-800"
+                          : "text-gray-400"
+                      }`}
+                    >
+                      {formatDeliveryDate(order.expectedDeliveryDate)}
                     </p>
-                    <p className="text-blue-700 font-medium">
-                      {getEtaLabel(deliveryInfo)}
-                      {" • "}
-                      {formatEstimateRange(deliveryInfo)}
-                    </p>
-                    <p className="text-gray-500">
-                      {deliveryInfo.mode === "LOCAL"
-                        ? "Own delivery"
-                        : deliveryInfo.mode === "INTERNATIONAL"
-                          ? "International courier"
-                          : "Courier delivery"}
-                      {deliveryInfo.mode === "LOCAL" &&
-                      deliveryInfo.distanceKm !== null &&
-                      deliveryInfo.distanceKm !== undefined
-                        ? ` • about ${deliveryInfo.distanceKm} km from your store`
-                        : ""}
-                    </p>
-                    {deliveryInfo.shippingNote && (
-                      <p className="text-gray-500">
-                        {deliveryInfo.shippingNote}
+                    {!order.expectedDeliveryDate && canEditDeliveryDate && (
+                      <p className="text-[11px] text-gray-400">
+                        Required before marking as Shipped
                       </p>
                     )}
-                    {deliveryInfo.shippingCharge !== null &&
-                      deliveryInfo.shippingCharge !== undefined && (
-                        <p className="text-gray-600">
-                          Shipping charged to customer:{" "}
-                          <b>
-                            {Number(deliveryInfo.shippingCharge) === 0
-                              ? "Free"
-                              : money(deliveryInfo.shippingCharge)}
-                          </b>
+                  </div>
+                </div>
+
+                {(deliveryInfo?.etaLabel || deliveryInfo?.estimatedMinDate) && (
+                  <div className="mt-3 border-t border-gray-100 pt-3 space-y-2">
+                    <p className="text-xs font-semibold text-gray-600">
+                      Estimate shown to customer
+                    </p>
+
+                    <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
+                      <p className="text-sm font-semibold text-blue-700">
+                        {getEtaLabel(deliveryInfo)}
+                      </p>
+                      {deliveryInfo.estimatedMinDate && (
+                        <p className="text-xs text-gray-500">
+                          {formatEstimateRange(deliveryInfo)}
                         </p>
                       )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <InfoTile label="Delivery type">
+                        {deliveryInfo.mode === "LOCAL"
+                          ? "Own delivery"
+                          : deliveryInfo.mode === "INTERNATIONAL"
+                            ? "International"
+                            : "Courier"}
+                      </InfoTile>
+                      <InfoTile label="Shipping charged">
+                        {Number(deliveryInfo.shippingCharge ?? 0) === 0
+                          ? "Free"
+                          : money(deliveryInfo.shippingCharge)}
+                      </InfoTile>
+                      {deliveryInfo.courierName && (
+                        <InfoTile label="Courier">
+                          {deliveryInfo.courierName}
+                        </InfoTile>
+                      )}
+                      {deliveryInfo.courierRate != null && (
+                        <InfoTile label="Courier rate">
+                          {money(deliveryInfo.courierRate)}
+                        </InfoTile>
+                      )}
+                    </div>
+
+                    <p className="text-[11px] text-gray-400">
+                      {deliveryInfo.source === "SHIPROCKET"
+                        ? "Based on live courier rate"
+                        : deliveryInfo.mode !== "LOCAL"
+                          ? "Based on store's backup estimate"
+                          : ""}
+                      {deliveryInfo.mode === "LOCAL" &&
+                      deliveryInfo.distanceKm != null
+                        ? `About ${deliveryInfo.distanceKm} km from your store`
+                        : ""}
+                      {deliveryInfo.shippingNote
+                        ? ` • ${deliveryInfo.shippingNote}`
+                        : ""}
+                    </p>
                   </div>
                 )}
-              </div>
+              </SectionCard>
             )}
           </div>
         </div>
 
-        {/* Cancel reason dialog (remarks mandatory) */}
+        {/* ============ Dialogs ============ */}
+
+        {/* Cancel order */}
         <Dialog
           header="Cancel Order"
           visible={cancelDialogVisible}
-          style={{ width: "28rem" }}
-          breakpoints={{ "641px": "95vw" }}
+          style={{ width: "28rem", maxWidth: "95vw" }}
           onHide={closeCancelDialog}
-        >
-          {isPaid && (
-            <div className="mb-3 text-xs bg-red-50 border border-red-200 text-red-700 rounded-md p-2.5">
-              <i className="pi pi-exclamation-triangle mr-1"></i>
-              The customer has already paid {money(order.totalAmount)}
-              {order.paymentMethod === "ONLINE" ? " online" : ""}. Cancelling
-              will not refund automatically, you must refund the customer
-              manually.
+          draggable={false}
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button
+                label="Back"
+                text
+                onClick={closeCancelDialog}
+                disabled={updating}
+              />
+              <Button
+                label="Cancel Order"
+                icon="pi pi-times"
+                severity="danger"
+                loading={updating}
+                onClick={confirmCancelOrder}
+              />
             </div>
-          )}
-
-          <label className="text-sm font-semibold text-gray-700 block mb-2">
-            Cancellation reason <span className="text-red-500">*</span>
-          </label>
+          }
+        >
+          <p className="text-sm text-gray-600 mb-3">
+            Please tell us why this order is being cancelled. The customer will
+            see this reason.
+          </p>
           <InputTextarea
             value={cancelNote}
             onChange={(e) => {
               setCancelNote(e.target.value);
               if (cancelError) setCancelError("");
             }}
-            onBlur={() => setCancelError(getCancelReasonError(cancelNote))}
-            rows={3}
+            rows={4}
             maxLength={CANCEL_REASON_MAX}
+            autoResize
             className={`w-full ${cancelError ? "p-invalid" : ""}`}
-            placeholder="e.g. Out of stock"
-            autoFocus
+            placeholder="Cancellation reason (required)"
           />
-          <div className="flex justify-between items-start mt-1">
-            {cancelError ? (
-              <small className="text-red-500 flex items-center gap-1">
-                <i className="pi pi-exclamation-circle"></i>
-                {cancelError}
-              </small>
-            ) : (
-              <span />
-            )}
+          <div className="flex items-start justify-between mt-1">
+            <small className="text-red-500">{cancelError}</small>
             <small className="text-gray-400">
               {cancelNote.length}/{CANCEL_REASON_MAX}
             </small>
-          </div>
-          <div className="flex justify-end gap-2 mt-4">
-            <Button label="Close" text onClick={closeCancelDialog} />
-            <Button
-              label="Confirm Cancel"
-              severity="danger"
-              onClick={confirmCancelOrder}
-              loading={updating}
-              disabled={cancelNote.trim().length < CANCEL_REASON_MIN}
-            />
           </div>
         </Dialog>
 
         {/* Karigar share modal */}
         <Dialog
-          header={
-            shareModal.items.length === 1
-              ? `Share "${shareModal.items[0].name}" with Karigar`
-              : `Share ${shareModal.items.length} products with Karigar`
-          }
+          header={`Send to Karigar (${shareModal.items.length} item${
+            shareModal.items.length > 1 ? "s" : ""
+          })`}
           visible={shareModal.visible}
-          style={{ width: "28rem" }}
-          breakpoints={{ "641px": "95vw" }}
+          style={{ width: "28rem", maxWidth: "95vw" }}
           onHide={closeShareModal}
+          draggable={false}
         >
-          {shareModal.items.length > 0 && (
-            <div className="border border-blue-100 rounded-lg mb-3 bg-blue-50 max-h-44 overflow-y-auto divide-y divide-blue-100">
-              {shareModal.items.map((it: any) => (
-                <div key={it._id} className="flex items-center gap-3 p-2">
-                  {it.image ? (
-                    <MediaPreview
-                      src={it.image}
-                      alt={it.name}
-                      autoPlay={false}
-                      showBadge={false}
-                      wrapperClassName="h-12 w-12 rounded-md border border-gray-200 bg-gray-100 shrink-0"
-                    />
-                  ) : (
-                    <div className="h-12 w-12 rounded-md border border-gray-200 bg-gray-100 shrink-0 flex items-center justify-center text-gray-400 text-xs">
-                      N/A
-                    </div>
-                  )}
-                  <div className="text-xs text-gray-700 min-w-0">
-                    <p className="font-medium line-clamp-1">{it.name}</p>
-                    <p className="text-gray-500">
-                      {it.color && `${it.color} • `}
-                      {it.size && `${it.size} • `}
-                      {it.weight && `${it.weight} • `}
-                      Qty {it.quantity}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <IconField iconPosition="left" className="w-full mb-2">
+          <IconField iconPosition="left" className="w-full mb-3">
             <InputIcon className="pi pi-search" />
             <InputText
               value={karigarSearch}
               onChange={(e) => setKarigarSearch(e.target.value)}
-              placeholder="Search karigar by name / number"
-              className="p-inputtext-sm w-full"
+              placeholder="Search by name or number"
+              className="w-full"
             />
           </IconField>
 
-          <div className="flex flex-col gap-1.5 max-h-72 overflow-y-auto">
-            {karigarLoading && (
-              <p className="text-xs text-gray-400 text-center py-4">
-                Loading karigars...
-              </p>
-            )}
-
-            {!karigarLoading && filteredKarigars.length === 0 && (
-              <p className="text-xs text-gray-400 text-center py-4">
-                No karigar found
-              </p>
-            )}
-
-            {!karigarLoading &&
-              filteredKarigars.map((k) => (
+          {karigarLoading ? (
+            <div className="flex justify-center py-8">
+              <i className="pi pi-spin pi-spinner text-2xl text-gray-400" />
+            </div>
+          ) : filteredKarigars.length === 0 ? (
+            <p className="text-sm text-gray-500 text-center py-6">
+              No karigar found
+            </p>
+          ) : (
+            <div className="max-h-80 overflow-y-auto divide-y divide-gray-100 border border-gray-100 rounded-lg">
+              {filteredKarigars.map((k) => (
                 <button
                   key={k._id}
+                  type="button"
                   onClick={() => handleSelectKarigar(k)}
-                  className="flex items-center justify-between gap-2 border border-gray-200 rounded-md px-3 py-2 hover:bg-green-50 hover:border-green-300 transition-colors text-left"
+                  className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-green-50 transition-colors"
                 >
-                  <div>
-                    <p className="text-sm font-medium text-gray-800">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">
                       {k.name}
                     </p>
                     <p className="text-xs text-gray-500">{k.whatsappNo}</p>
                   </div>
-                  <i className="pi pi-whatsapp text-green-600 text-lg" />
+                  <i className="pi pi-whatsapp text-green-600 text-lg shrink-0" />
                 </button>
               ))}
-          </div>
+            </div>
+          )}
         </Dialog>
 
         <DeliveryDateDialog
           visible={dateDialog.visible}
+          loading={updating}
+          initialDate={order.expectedDeliveryDate}
           title={
-            dateDialog.mode === "ship" ? "Ship Order" : "Expected Delivery Date"
+            dateDialog.mode === "ship"
+              ? "Mark as Shipped"
+              : "Edit Delivery Date"
           }
           description={
             dateDialog.mode === "ship"
-              ? "Set when this order will reach the customer, then it will be marked as Shipped."
-              : "Set or change when this order will reach the customer."
+              ? "Set the expected delivery date. The order will be marked as Shipped."
+              : undefined
           }
-          confirmLabel={dateDialog.mode === "ship" ? "Ship Order" : "Save Date"}
-          loading={updating}
-          // [DELIVERY] date set kora na thakle customer ke dekhano estimate er shesh date prefill
-          initialDate={
-            order.expectedDeliveryDate ?? deliveryInfo?.estimatedMaxDate
+          confirmLabel={
+            dateDialog.mode === "ship" ? "Mark as Shipped" : "Update Date"
           }
           onHide={() => setDateDialog((d) => ({ ...d, visible: false }))}
           onConfirm={confirmDeliveryDate}
         />
 
         <ConfirmDialog />
-        <ToastContainer position="top-right" />
+        <ToastContainer position="top-right" autoClose={3000} />
       </div>
     </div>
   );

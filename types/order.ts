@@ -27,6 +27,32 @@ export type PaymentStatus =
 
 export type PaymentAttemptStatus = "INITIATED" | "SUCCESS" | "FAILED";
 
+export type OrderParcelItem = {
+  productId?: string;
+  variantId?: string | null;
+  name?: string | null;
+  quantity: number;
+  unitWeightKg: number;
+  lineWeightKg: number;
+  length: number;
+  breadth: number;
+  height: number;
+  usedDefaultWeight?: boolean;
+  usedDefaultDims?: boolean;
+};
+
+export type OrderParcel = {
+  length: number;
+  breadth: number;
+  height: number;
+  weight: number;
+  volumetricWeight: number;
+  chargeableWeight: number;
+  dimsComplete?: boolean;
+  weightComplete?: boolean;
+  items: OrderParcelItem[];
+};
+
 export type PaymentAttempt = {
   txnid: string;
   amount: number;
@@ -141,6 +167,7 @@ export type OrderRow = {
   expectedDeliveryDate?: string | null;
   deliveryInfo?: DeliveryInfo | null;
   shipment?: OrderShipment | null;
+  parcel?: OrderParcel | null;
   shippingCharge?: number;
   itemsTotal?: number | null;
   deliveryEnabled?: boolean;
