@@ -19,8 +19,11 @@ import { Button } from "primereact/button";
 import { Dialog } from "primereact/dialog";
 import { toast } from "react-toastify";
 import axiosInstance from "@/service/axios.service";
-// [STOCK] create mode e store setting dekhar jonno
-import { getStoreSettings } from "@/service/storeSetting.service";
+import {
+  getStoreSettings,
+  resolveBusinessType,
+  StoreBusinessType,
+} from "@/service/storeSetting.service";
 import {
   createProductSchema,
   updateProductSchema,
@@ -765,7 +768,7 @@ function SizeVariantRow({
           <>
             <div className="space-y-1 min-w-0">
               <label className="text-[10px] font-semibold text-gray-600">
-                Opening Stock
+                Opening Stock<span className="text-red-500">*</span>
               </label>
               <Controller
                 name={`${basePath}.openingStock` as any}
@@ -1057,7 +1060,7 @@ function ColorVariantBlock({
               <>
                 <div className="space-y-1 min-w-0">
                   <label className="text-[10px] font-semibold text-gray-600">
-                    Opening Stock
+                    Opening Stock<span className="text-red-500">*</span>
                   </label>
                   <Controller
                     name={`variants.${colorIndex}.openingStock` as any}
@@ -1137,7 +1140,15 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
 
   // [STOCK] create: store settings theke, edit: product er nijer hasStockManagement flag theke.
   // false hole main product, color variant, size variant, kothao stock field dekhabe na.
-  const [stockEnabled, setStockEnabled] = useState(false);
+  // [STORE TYPE] create: store type + toggle theke, edit: product er nijer snapshot flag theke
+  const [businessType, setBusinessType] =
+    useState<StoreBusinessType>("MADE_FOR_PRODUCT");
+  const [madeForProduct, setMadeForProduct] = useState(false); // shudhu BOTH type e user choose kore
+  const [editStockManaged, setEditStockManaged] = useState(true);
+
+  const stockEnabled = isEditMode
+    ? editStockManaged
+    : businessType === "RETAIL" || (businessType === "BOTH" && !madeForProduct);
 
   // Both toggles are real state and only change when the user clicks them.
   // hasColor = color variants on/off
@@ -1559,10 +1570,12 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
     (async () => {
       try {
         const res = await getStoreSettings(selectedStoreId as string);
-        if (!cancelled)
-          setStockEnabled(!!res.data?.settings?.hasStockManagement);
+        if (!cancelled) {
+          setBusinessType(resolveBusinessType(res.data?.settings));
+          setMadeForProduct(false);
+        }
       } catch {
-        if (!cancelled) setStockEnabled(false);
+        if (!cancelled) setBusinessType("MADE_FOR_PRODUCT");
       }
     })();
 
@@ -1589,7 +1602,9 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
       setValue("hsnCode" as any, (product.hsnCode || "") as any);
 
       // [STOCK] edit mode e product er nijer flag dekhe stock field show/hide
-      setStockEnabled(product.hasStockManagement !== false);
+      // [STORE TYPE] edit mode e product er nijer flag dekhe stock field show/hide
+      setEditStockManaged(product.hasStockManagement !== false);
+      setMadeForProduct(product.isMadeForProduct === true);
 
       const rawVariants: any[] = Array.isArray(product.variants)
         ? product.variants
@@ -1774,6 +1789,19 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
       if (!HSN_REGEX.test(hsn)) return "HSN code must be 4, 6 or 8 digits";
     }
 
+    if (stockEnabled) {
+      const rows: any[] = !hasVariants
+        ? [values]
+        : variants.flatMap((v: any) => {
+            const sizes = (v.sizeVariants || []).filter(
+              (sv: any) => !isEmptySizeVariant(sv),
+            );
+            return sizes.length ? sizes : [v];
+          });
+      if (rows.some((r) => isNil(r?.openingStock)))
+        return "Opening stock is required";
+    }
+
     // ---- Media ----
     if (!hasColor && existingImages.length + imageFiles.length === 0) {
       return "Product image is required. Add at least one image or video in the 'Product Images / Videos' section.";
@@ -1872,6 +1900,16 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
       formData.append("description", data.description || "");
       formData.append("unit", data.unit || "");
       formData.append("hasColor", String(hasColor));
+
+      if (!isEditMode) {
+        formData.append(
+          "isMadeForProduct",
+          String(
+            businessType === "MADE_FOR_PRODUCT" ||
+              (businessType === "BOTH" && madeForProduct),
+          ),
+        );
+      }
 
       // [GST] product level
       formData.append(
@@ -2294,6 +2332,25 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
           </div>
         </div>
 
+        {!isEditMode && businessType === "BOTH" && (
+          <div className="flex items-center justify-between rounded-xl border border-orange-200 bg-orange-50/50 p-2.5">
+            <div>
+              <p className="text-sm font-semibold text-gray-800">
+                Made for product
+              </p>
+              <p className="text-xs text-gray-500">
+                Turn on if this product is made after the customer orders it. No
+                quantity needs to be entered. This cannot be changed after the
+                product is created.
+              </p>
+            </div>
+            <InputSwitch
+              checked={madeForProduct}
+              onChange={(e) => setMadeForProduct(!!e.value)}
+            />
+          </div>
+        )}
+
         {/* PRICING & STOCK: values entered here fill every variant below */}
         <div className="space-y-2">
           <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
@@ -2363,7 +2420,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
               <>
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-gray-700">
-                    Opening Stock
+                    Opening Stock<span className="text-red-500">*</span>
                   </label>
                   <Controller
                     name="openingStock"

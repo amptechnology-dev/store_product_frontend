@@ -65,6 +65,7 @@ type ProductRow = {
   hasVariants?: boolean;
   hasColor?: boolean;
   hasStockManagement?: boolean;
+  isMadeForProduct?: boolean;
   isActive: boolean;
   isVerified: boolean;
   createdAt?: string;
@@ -1108,6 +1109,11 @@ function Page() {
                         {hasGst(p) && (
                           <Badge className="bg-green-100 text-green-800">
                             GST{p.gstInclusive ? " incl." : ""}
+                          </Badge>
+                        )}
+                        {p.isMadeForProduct && (
+                          <Badge className="bg-orange-100 text-orange-800">
+                            Made for product
                           </Badge>
                         )}
                         {p.hasStockManagement && <StockBadge p={p} />}

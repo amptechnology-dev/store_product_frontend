@@ -9,18 +9,19 @@ import axiosInstance from "@/service/axios.service";
 import {
   getStoreSettings,
   updateStoreSettings,
+  resolveBusinessType,
+  StoreBusinessType,
 } from "@/service/storeSetting.service";
 
 type PaymentMode = "BOTH" | "ONLINE_ONLY" | "OFF";
-type ToggleKey = "hasStockManagement" | "hasDelivery";
 type Settings = {
-  hasStockManagement: boolean;
+  storeBusinessType: StoreBusinessType;
   hasDelivery: boolean;
   paymentMode: PaymentMode;
 };
 
 const DEFAULT_SETTINGS: Settings = {
-  hasStockManagement: false,
+  storeBusinessType: "MADE_FOR_PRODUCT",
   hasDelivery: true,
   paymentMode: "BOTH",
 };
@@ -63,6 +64,48 @@ const PAYMENT_OPTIONS: {
       "Customers are not asked to pay in the app",
       "Payments and Settlements are removed from your menu",
       "Orders are not counted in payment reports",
+    ],
+  },
+];
+
+const STORE_TYPE_OPTIONS: {
+  value: StoreBusinessType;
+  title: string;
+  icon: string;
+  desc: string;
+  points: string[];
+}[] = [
+  {
+    value: "RETAIL",
+    title: "Retail store",
+    icon: "pi-shopping-bag",
+    desc: "You sell ready products from your shelf",
+    points: [
+      "Opening Stock is required for every product",
+      "Quantity is checked at cart and order",
+      "Quantity is reduced after each order",
+    ],
+  },
+  {
+    value: "MADE_FOR_PRODUCT",
+    title: "Made for product store",
+    icon: "pi-palette",
+    desc: "You make each product after the customer orders it",
+    points: [
+      "No quantity tracking for any product",
+      "Products are always available to order",
+      "Quantity fields are hidden everywhere",
+    ],
+  },
+  {
+    value: "BOTH",
+    title: "Retail + Made for product",
+    icon: "pi-clone",
+    desc: "You sell ready products and also make products to order",
+    points: [
+      "You choose for each product if it is made for product or not",
+      "Ready products need Opening Stock",
+      "Made for product products have no quantity tracking",
     ],
   },
 ];
@@ -130,7 +173,9 @@ function SettingCard({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 sm:p-4 bg-white">
         <div
           className={`rounded-lg border p-3 transition-all ${
-            checked ? "border-green-300 bg-green-50" : "border-gray-200 bg-white"
+            checked
+              ? "border-green-300 bg-green-50"
+              : "border-gray-200 bg-white"
           }`}
         >
           <p className="text-xs font-semibold text-green-700 flex items-center gap-1.5 mb-1.5">
@@ -178,6 +223,26 @@ function StoreSettingsPage() {
   const [loading, setLoading] = useState(false);
   const [savingKey, setSavingKey] = useState<string | null>(null);
 
+  // role read korar por-i store type section dekhabe (flash / flicker avoid korar jonno)
+  const [role, setRole] = useState<string | null>(null);
+  const [roleReady, setRoleReady] = useState(false);
+
+  useEffect(() => {
+    // localStorage er "login-user" key te JSON object thake: { ..., "role": "STORE" }
+    try {
+      const raw = localStorage.getItem("login-user");
+      const user = raw ? JSON.parse(raw) : null;
+      setRole(user?.role ? String(user.role).toUpperCase() : null);
+    } catch {
+      setRole(null);
+    } finally {
+      setRoleReady(true);
+    }
+  }, []);
+
+  // STORE role hole: shudhu nijer store type dekhabe, change korte parbe na
+  const isStoreRole = role === "STORE";
+
   useEffect(() => {
     fetchStores();
   }, []);
@@ -203,7 +268,7 @@ function StoreSettingsPage() {
       const res = await getStoreSettings(id);
       const s = res.data?.settings || {};
       setSettings({
-        hasStockManagement: !!s.hasStockManagement,
+        storeBusinessType: resolveBusinessType(s),
         hasDelivery: s.hasDelivery !== false,
         paymentMode: (["BOTH", "ONLINE_ONLY", "OFF"].includes(s.paymentMode)
           ? s.paymentMode
@@ -220,6 +285,10 @@ function StoreSettingsPage() {
   // ek ta setting save (optimistic, fail hole ager obosthay)
   const save = async (key: keyof Settings, value: any) => {
     if (!storeId) return;
+
+    // extra guard: STORE role hole store type kono bhabei change hobe na
+    if (key === "storeBusinessType" && isStoreRole) return;
+
     const prev = settings[key];
     setSettings((s) => ({ ...s, [key]: value }));
     try {
@@ -241,6 +310,11 @@ function StoreSettingsPage() {
   };
 
   const busy = savingKey !== null || !storeId;
+
+  // STORE role hole shudhu active store type, na hole shob gulo
+  const visibleStoreTypeOptions = isStoreRole
+    ? STORE_TYPE_OPTIONS.filter((o) => o.value === settings.storeBusinessType)
+    : STORE_TYPE_OPTIONS;
 
   return (
     <div className="w-full flex justify-start items-start pt-2">
@@ -380,27 +454,111 @@ function StoreSettingsPage() {
                 note="This applies to new orders. Orders already placed keep the delivery details they were created with."
               />
 
-              {/* Stock */}
-              <SettingCard
-                icon="pi-box"
-                title="Stock Management"
-                subtitle="Track stock for products and variants"
-                checked={settings.hasStockManagement}
-                saving={savingKey === "hasStockManagement"}
-                disabled={busy}
-                onChange={(v) => save("hasStockManagement", v)}
-                onItems={[
-                  "Opening Stock and Low Stock Alert fields are shown on products and variants",
-                  "Stock is validated at cart and order",
-                  "Stock is reduced after each order",
-                ]}
-                offItems={[
-                  "Stock fields are hidden",
-                  "No stock validation at cart or order",
-                  "No stock deduction is applied",
-                ]}
-                note="This setting is saved on each product when it is created. Changing it later will not affect products that were already created."
-              />
+              {/* Store type */}
+              {roleReady && (
+                <div className="rounded-xl border border-blue-100 overflow-hidden">
+                  <div className="flex items-center justify-between gap-3 p-3 sm:p-4 bg-blue-50/50">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+                        <i className="pi pi-building text-blue-600 text-lg"></i>
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-800">
+                          Store type
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {isStoreRole
+                            ? "How your store sells its products"
+                            : "Choose how your store sells its products"}
+                        </p>
+                      </div>
+                    </div>
+                    {savingKey === "storeBusinessType" && (
+                      <i className="pi pi-spin pi-spinner text-blue-500 text-sm"></i>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 sm:p-4 bg-white">
+                    {visibleStoreTypeOptions.map((opt) => {
+                      const active = settings.storeBusinessType === opt.value;
+
+                      const content = (
+                        <>
+                          <div className="flex items-center gap-2">
+                            <i
+                              className={`pi ${opt.icon} ${
+                                active ? "text-blue-600" : "text-gray-400"
+                              }`}
+                            />
+                            <span
+                              className={`text-sm font-semibold ${
+                                active ? "text-blue-800" : "text-gray-700"
+                              }`}
+                            >
+                              {opt.title}
+                            </span>
+                            {active && (
+                              <i className="pi pi-check-circle text-blue-600 ml-auto" />
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">
+                            {opt.desc}
+                          </p>
+                          <ul className="text-xs text-gray-600 space-y-1 list-disc pl-4 leading-relaxed mt-2">
+                            {opt.points.map((t) => (
+                              <li key={t}>{t}</li>
+                            ))}
+                          </ul>
+                        </>
+                      );
+
+                      // STORE role: click hobe na, shudhu dekhabe (div, button na)
+                      if (isStoreRole) {
+                        return (
+                          <div
+                            key={opt.value}
+                            className="text-left rounded-lg border border-blue-500 bg-blue-50 p-3 cursor-default select-none"
+                          >
+                            {content}
+                          </div>
+                        );
+                      }
+
+                      // Baki role: age er moto click kore change korte parbe
+                      return (
+                        <button
+                          type="button"
+                          key={opt.value}
+                          disabled={busy}
+                          onClick={() => {
+                            if (!active) save("storeBusinessType", opt.value);
+                          }}
+                          className={`text-left rounded-lg border p-3 transition-all disabled:opacity-60 ${
+                            active
+                              ? "border-blue-500 bg-blue-50"
+                              : "border-gray-200 hover:bg-gray-50"
+                          }`}
+                        >
+                          {content}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Change korar note shudhu jara change korte pare tader jonno */}
+                  {!isStoreRole && (
+                    <div className="px-3 sm:px-4 pb-3 sm:pb-4 bg-white">
+                      <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800 flex gap-3">
+                        <i className="pi pi-info-circle mt-0.5 flex-shrink-0"></i>
+                        <span className="leading-relaxed">
+                          This applies to products created after the change.
+                          Products already created keep their current behavior.
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>

@@ -18,6 +18,12 @@ import storeTypeList from "@/lib/storetype.json";
 
 const DEFAULT_COUNTRY = "India";
 
+const BUSINESS_TYPE_OPTIONS = [
+  { label: "Retail (stock managed)", value: "RETAIL" },
+  { label: "Made for product (no stock)", value: "MADE_FOR_PRODUCT" },
+  { label: "Both", value: "BOTH" },
+];
+
 // Zod Schema
 // Store details (contact, whatsapp, location) ekhane optional rakha hoyeche,
 // karon ADMIN create korar shomoy ei field gulo form e thake na.
@@ -367,6 +373,7 @@ function StoreForm({
   const [isActive, setIsActive] = useState(true);
   const [isVerify, setIsVerify] = useState(false);
   const [isVisitor, setIsVisitor] = useState(false);
+  const [storeBusinessType, setStoreBusinessType] = useState("");
   const [isMapLoading, setIsMapLoading] = useState(false);
   const [locationQuery, setLocationQuery] = useState("");
   const [locationResults, setLocationResults] = useState<
@@ -691,6 +698,7 @@ function StoreForm({
       setIsVisitor(
         typeof store.isVisitor === "boolean" ? store.isVisitor : false,
       );
+      setStoreBusinessType(store.storeBusinessType || "");
     } catch (error: any) {
       toast.error(
         error.response?.data?.message || "Failed to fetch store data",
@@ -729,6 +737,10 @@ function StoreForm({
   };
 
   const onSubmit = async (data: StoreFormData) => {
+    if (canShowVerifyField && !storeBusinessType) {
+      toast.error("Please select store business type");
+      return;
+    }
     setIsSubmitting(true);
     try {
       const formData = new FormData();
@@ -777,6 +789,7 @@ function StoreForm({
       formData.append("isVerify", isVerify.toString());
       if (canShowVerifyField) {
         formData.append("isVisitor", isVisitor.toString());
+        formData.append("storeBusinessType", storeBusinessType);
       }
 
       let res;
@@ -810,6 +823,7 @@ function StoreForm({
       setLocationResults([]);
       setSelectedLocationLabel("");
       setIsVisitor(false);
+      setStoreBusinessType("");
       onSuccess();
     } catch (error: any) {
       console.error("Store operation error:", error);
@@ -970,6 +984,27 @@ function StoreForm({
                 </small>
               )}
             </div>
+
+            {canShowVerifyField && (
+              <div className="space-y-1">
+                <label className="text-sm font-semibold text-gray-700 flex items-center gap-1">
+                  Store Business Type <span className="text-red-500">*</span>
+                </label>
+                <Dropdown
+                  value={storeBusinessType}
+                  onChange={(e) => setStoreBusinessType(e.value)}
+                  options={BUSINESS_TYPE_OPTIONS}
+                  optionLabel="label"
+                  optionValue="value"
+                  placeholder="Select business type"
+                  className="w-full border-yellow-300"
+                  panelClassName="!text-sm"
+                />
+                <small className="text-gray-500">
+                  Controls stock management for this store's products.
+                </small>
+              </div>
+            )}
 
             {showStoreDetails && (
               <>
