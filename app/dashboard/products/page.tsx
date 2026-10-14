@@ -60,6 +60,7 @@ type ProductRow = {
   priceTiers?: PriceTier[];
   gst?: Gst | null; // [GST]
   gstInclusive?: boolean; // [GST]
+  hsnCode?: string | null;
   variants?: Variant[];
   hasVariants?: boolean;
   hasColor?: boolean;
@@ -455,6 +456,7 @@ function PreviewBody({
         ? `${gstOf(product.gst)}${product.gstInclusive ? " (incl.)" : " (extra)"}`
         : "-",
     },
+    { label: "HSN", value: product.hsnCode || "-" },
     { label: "Stock", value: <StockBadge p={product} /> },
     { label: "Status", value: <StatusBadges p={product} /> },
     { label: "Created", value: formatDate(product.createdAt || "") },

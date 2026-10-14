@@ -96,6 +96,7 @@ export type OrderItem = {
   // [GST] purono order e field na-o thakte pare
   gstRates?: GstRates | null;
   gstInclusive?: boolean;
+  hsnCode?: string | null;
   taxableAmount?: number | null;
   cgstAmount?: number;
   sgstAmount?: number;

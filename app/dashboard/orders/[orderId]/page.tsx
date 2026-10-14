@@ -1554,6 +1554,11 @@ function OrderDetailsPage() {
                             {item.gstInclusive ? " (incl.)" : ""}
                           </p>
                         )}
+                        {item.hsnCode && (
+                          <p className="text-[11px] text-gray-500 mt-0.5">
+                            HSN: {item.hsnCode}
+                          </p>
+                        )}
                       </div>
 
                       <div className="flex flex-col items-end justify-between self-stretch shrink-0">

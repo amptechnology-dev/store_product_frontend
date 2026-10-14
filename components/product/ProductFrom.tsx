@@ -66,7 +66,7 @@ const MAX_IMAGE_SIZE_MB = 50;
 const MAX_VIDEO_SIZE_MB = 100; // original video (backend multer limit er sathe mil)
 const MAX_FILES_PER_REQUEST = 30;
 
-const MEDIA_HINT = `JPG, PNG, WEBP, GIF, AVIF, MP4, WEBM, MOV. Image max ${MAX_IMAGE_SIZE_MB}MB, video max ${MAX_VIDEO_SIZE_MB}MB. Video max ${MAX_CLIP_SECONDS} sec (trim korte parben), GIF hoye save hobe.`;
+const MEDIA_HINT = `JPG, PNG, WEBP, GIF, AVIF, MP4, WEBM, MOV. Images up to ${MAX_IMAGE_SIZE_MB}MB, videos up to ${MAX_VIDEO_SIZE_MB}MB. Videos can be up to ${MAX_CLIP_SECONDS} seconds (you can trim them) and are saved as GIF.`;
 
 const VIDEO_URL_REGEX = /\.(mp4|webm|mov)(\?.*)?$/i;
 const isVideoUrl = (url?: string | null) => !!url && VIDEO_URL_REGEX.test(url);
@@ -146,6 +146,18 @@ const validateGstFields = (label: string, g: any): string | null => {
   }
   return null;
 };
+
+// ---------- [HSN] ----------
+const HSN_REGEX = /^(\d{4}|\d{6}|\d{8})$/;
+
+// product / color / size, je kono level e GST dewa ache kina
+const hasAnyGstInForm = (gst: any, variants: any[]): boolean =>
+  !!cleanGst(gst) ||
+  (variants || []).some(
+    (v: any) =>
+      !!cleanGst(v?.gst) ||
+      (v?.sizeVariants || []).some((s: any) => !!cleanGst(s?.gst)),
+  );
 
 const genUiKey = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -474,7 +486,7 @@ function GstFieldsBlock({
           </div>
           <p className="text-[10px] text-gray-400">
             {hint ||
-              "Same state e CGST + SGST, onno state e IGST lagbe. Khali rakhle parent er GST ba no GST."}
+              "Use CGST + SGST for sales within the same state and IGST for sales to another state. If left empty, the parent GST (or no GST) applies."}
           </p>
         </div>
       )}
@@ -808,7 +820,7 @@ function SizeVariantRow({
         control={control}
         basePath={`${basePath}.gst`}
         title="GST override (optional)"
-        hint="Khali rakhle color / product er GST use hobe."
+        hint="If left empty, the color or product GST will be used."
       />
       <PackagingFieldsBlock
         control={control}
@@ -955,8 +967,8 @@ function ColorVariantBlock({
           title="GST for this color (optional)"
           hint={
             sizeMode
-              ? "Ei color er size option gulor default GST. Kono size e alada dite chaile oi size er GST override use koro."
-              : "Khali rakhle product er GST use hobe."
+              ? "Default GST for this color's size options. To use a different GST for a size, set a GST override on that size."
+              : "If left empty, the product GST will be used."
           }
         />
       </div>
@@ -1161,6 +1173,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
       priceTiers: [],
       gst: {}, // [GST]
       gstInclusive: false, // [GST]
+      hsnCode: "", // [HSN]
       variants: [],
     },
   });
@@ -1197,6 +1210,10 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
   const cameraTargetRef = useRef<string | null>(null);
 
   const selectedStoreId = watch("storeId");
+
+  const watchedGst = useWatch({ control, name: "gst" as any });
+  const watchedVariants = useWatch({ control, name: "variants" as any });
+  const gstOn = hasAnyGstInForm(watchedGst, watchedVariants as any[]);
 
   const getUiKey = (field: any): string => field?._uiKey || field?.id;
 
@@ -1569,6 +1586,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
       // [GST] product level GST + inclusive flag
       setValue("gst" as any, (product.gst || {}) as any);
       setValue("gstInclusive" as any, (product.gstInclusive === true) as any);
+      setValue("hsnCode" as any, (product.hsnCode || "") as any);
 
       // [STOCK] edit mode e product er nijer flag dekhe stock field show/hide
       setStockEnabled(product.hasStockManagement !== false);
@@ -1750,6 +1768,12 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
     const topGstErr = validateGstFields("", (values as any).gst);
     if (topGstErr) return topGstErr;
 
+    if (hasAnyGstInForm((values as any).gst, variants)) {
+      const hsn = String((values as any).hsnCode ?? "").trim();
+      if (!hsn) return "HSN code is required when GST is applied";
+      if (!HSN_REGEX.test(hsn)) return "HSN code must be 4, 6 or 8 digits";
+    }
+
     // ---- Media ----
     if (!hasColor && existingImages.length + imageFiles.length === 0) {
       return "Product image is required. Add at least one image or video in the 'Product Images / Videos' section.";
@@ -1858,6 +1882,15 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
         "gstInclusive",
         String((getValues() as any).gstInclusive === true),
       );
+
+      {
+        const v = getValues() as any;
+        const gstActive = hasAnyGstInForm(v.gst, (v.variants || []) as any[]);
+        formData.append(
+          "hsnCode",
+          gstActive ? String(v.hsnCode ?? "").trim() : "",
+        );
+      }
 
       if (!isEditMode && data.storeId)
         formData.append("storeId", String(data.storeId));
@@ -2406,10 +2439,41 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
             }
             hint={
               hasVariants
-                ? "Eta shob variant e lagbe. Kono color / size e alada GST dite chaile oi variant er GST override use koro."
+                ? "Applies to all variants. To use a different GST for a color or size, set a GST override on that variant."
                 : undefined
             }
           />
+
+          {/* [HSN] kono level e GST thakle-i dekhabe */}
+          {gstOn && (
+            <div className="space-y-1 border border-green-100 rounded-lg px-2.5 py-2 bg-green-50/40">
+              <label className="text-xs font-semibold text-gray-700">
+                HSN Code <span className="text-red-500">*</span>
+              </label>
+              <Controller
+                name={"hsnCode" as any}
+                control={control}
+                render={({ field }) => (
+                  <InputText
+                    className="w-full"
+                    value={(field.value as string) ?? ""}
+                    onChange={(e) =>
+                      field.onChange(
+                        e.target.value.replace(/\D/g, "").slice(0, 8),
+                      )
+                    }
+                    inputMode="numeric"
+                    maxLength={8}
+                    placeholder="e.g. 6109 / 610910 / 61091000"
+                  />
+                )}
+              />
+              <p className="text-[10px] text-gray-500">
+                Enter a 4, 6 or 8 digit code. HSN code is required when GST is
+                applied.
+              </p>
+            </div>
+          )}
 
           <div className="flex items-center justify-between border border-green-100 rounded-lg px-2.5 py-1.5 bg-green-50/40">
             <div>
@@ -2417,8 +2481,8 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
                 Prices already include GST
               </p>
               <p className="text-[10px] text-gray-500">
-                On: GST price er bhetor theke ber hobe. Off: price er upor GST
-                jog hobe.
+                On: GST is calculated from within the price. Off: GST is added
+                on top of the price.
               </p>
             </div>
             <Controller

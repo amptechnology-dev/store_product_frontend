@@ -158,6 +158,7 @@ export const createProductSchema = zod.object({
   // [GST]
   gst: gstSchema,
   gstInclusive: zod.boolean().optional(),
+  hsnCode: zod.string().trim().optional(),
 
   // Loose union - real per-row validation component-e manually hoy
   variants: zod
