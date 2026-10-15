@@ -1160,7 +1160,7 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
   const {
     register,
     handleSubmit,
-    control,
+    control: typedControl,
     reset,
     setValue,
     getValues,
@@ -1182,12 +1182,14 @@ function ProductFrom({ productId, onClose, onSuccess }: ProductFormProps) {
       lowStockThreshold: 0,
       packagingDetails: {},
       priceTiers: [],
-      gst: {}, // [GST]
-      gstInclusive: false, // [GST]
-      hsnCode: "", // [HSN]
+      gst: {}, 
+      gstInclusive: false, 
+      hsnCode: "", 
       variants: [],
     },
   });
+
+  const control = typedControl as unknown as Control<any>;
 
   const {
     fields: variantFields,
